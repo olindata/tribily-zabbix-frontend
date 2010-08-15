@@ -349,11 +349,13 @@ class CUserGroup extends CZBXAPI{
 
 		self::BeginTransaction(__METHOD__);
 		foreach($usrgrps as $ugnum => $usrgrp){
+                    // raj: replaced int values with respective CONSTANTS
 			$usrgrp_db_fields = array(
 				'name' 				=> null,
-				'users_status' 		=> GROUP_STATUS_DISABLED,
-				'gui_access' 		=> 200,
-				'api_access' 		=> 0
+				'users_status' 		=> GROUP_STATUS_ENABLED,
+				'gui_access' 		=> GROUP_GUI_ACCESS_SYSTEM,
+				'api_access' 		=> GROUP_API_ACCESS_DISABLED,
+                                'debug_mode'            => GROUP_DEBUG_MODE_DISABLED
 			);
 
 			if(!check_db_fields($usrgrp_db_fields, $usrgrp)){
@@ -362,10 +364,13 @@ class CUserGroup extends CZBXAPI{
 				break;
 			}
 
-			$result = add_user_group($usrgrp['name'], $usrgrp['users_status'], $usrgrp['gui_access'], $usrgrp['api_access']);
+			$result = add_user_group($usrgrp['name'], $usrgrp['users_status'], $usrgrp['gui_access'], $usrgrp['api_access'], $usrgrp['debug_mode']);
 			if(!$result) break;
 
-			$usrgrpids[] = $result;
+                        $row = DBfetch(DBselect('SELECT usrgrpid FROM usrgrp WHERE name='.zbx_dbstr($usrgrp['name']), 1))
+                                or die('Unable to retrieve usergroup id');
+
+			$usrgrpids[] = $row['usrgrpid'];
 		}
 		$result = self::EndTransaction($result, __METHOD__);
 
@@ -428,7 +433,8 @@ class CUserGroup extends CZBXAPI{
 				break;
 			}
 
-			$result = update_user_group($usrgrp['usrgrpid'], $usrgrp['name'], $usrgrp['users_status'], $usrgrp['gui_access'], $usrgrp['api_access']);
+                        // raj: added debug mode to parameters to prevent breaking
+			$result = update_user_group($usrgrp['usrgrpid'], $usrgrp['name'], $usrgrp['users_status'], $usrgrp['gui_access'], $usrgrp['api_access'], $usrgrp['debug_mode']);
 			if(!$result) break;
 		}
 
