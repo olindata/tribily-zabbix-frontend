@@ -19,6 +19,9 @@
 **/
 ?>
 <?php
+
+include_once 'include/actions.inc.php';
+
 /**
  * File containing CAction class for API.
  * @package API
