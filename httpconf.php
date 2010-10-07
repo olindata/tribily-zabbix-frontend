@@ -86,18 +86,24 @@ include_once('include/page_header.php');
 <?php
 	$showdisabled = get_request('showdisabled', 0);
 
-	$params = array();
-	$options = array('only_current_node','not_proxy_hosts');
-	foreach($options as $option) $params[$option] = 1;
+	$options = array(
+		'groups' => array(
+			'not_proxy_hosts' => 1,
+			'editable' => 1,
+		),
+		'hosts' => array(
+			'templated_hosts' => 1,
+			'editable' => 1,
+		),
+		'hostid' => get_request('hostid', null),
+		'groupid' => get_request('groupid', null),
+	);
+	$pageFilter = new CPageFilter($options);
+	$_REQUEST['groupid'] = $pageFilter->groupid;
+	$_REQUEST['hostid'] = $pageFilter->hostid;
 
-	$PAGE_GROUPS = get_viewed_groups(PERM_READ_WRITE, $params);
-	$PAGE_HOSTS = get_viewed_hosts(PERM_READ_WRITE, $PAGE_GROUPS['selected'], $params);
-//SDI($_REQUEST['groupid'].' : '.$_REQUEST['hostid']);
 
-	validate_group_with_host($PAGE_GROUPS,$PAGE_HOSTS);
-
-	$available_groups = $PAGE_GROUPS['groupids'];
-	$available_hosts = $PAGE_HOSTS['hostids'];
+	$available_hosts = $pageFilter->hostsSelected ? array_keys($pageFilter->hosts) : array();
 
 	CProfile::update('web.httpconf.showdisabled',$showdisabled, PROFILE_TYPE_STR);
 ?>
@@ -350,23 +356,11 @@ include_once('include/page_header.php');
 	}
 	else {
 // Table HEADER
-		
 
-		$form = new CForm();
-		$form->setMethod('get');
+		$form = new CForm(null, 'get');
 
-		$cmbGroups = new CComboBox('groupid',$PAGE_GROUPS['selected'],'javascript: submit();');
-		$cmbHosts = new CComboBox('hostid',$PAGE_HOSTS['selected'],'javascript: submit();');
-
-		foreach($PAGE_GROUPS['groups'] as $groupid => $name){
-			$cmbGroups->addItem($groupid, $name);
-		}
-		foreach($PAGE_HOSTS['hosts'] as $hostid => $name){
-			$cmbHosts->addItem($hostid, $name);
-		}
-
-		$form->addItem(array(S_GROUP.SPACE,$cmbGroups));
-		$form->addItem(array(SPACE.S_HOST.SPACE,$cmbHosts));
+		$form->addItem(array(S_GROUP.SPACE,$pageFilter->getGroupsCB()));
+		$form->addItem(array(SPACE.S_HOST.SPACE,$pageFilter->getHostsCB()));
 
 		$numrows = new CDiv();
 		$numrows->setAttribute('name','numrows');
@@ -393,12 +387,12 @@ include_once('include/page_header.php');
 		$table  = new CTableInfo();
 		$table->setHeader(array(
 			new CCheckBox('all_httptests',null, "checkAll('".$form->getName()."','all_httptests','group_httptestid');"),
-			is_show_all_nodes() ? make_sorting_link(S_NODE,'h.hostid') : null,
-			($_REQUEST['hostid']==0) ? make_sorting_link(S_HOST,'h.host'):NULL,
-			array($link, SPACE, make_sorting_link(S_NAME,'wt.name')),
+			is_show_all_nodes() ? make_sorting_header(S_NODE,'h.hostid') : null,
+			($_REQUEST['hostid']==0) ? make_sorting_header(S_HOST,'h.host'):NULL,
+			make_sorting_header(array($link, SPACE, S_NAME),'wt.name'),
 			S_NUMBER_OF_STEPS,
 			S_UPDATE_INTERVAL,
-			make_sorting_link(S_STATUS,'wt.status')));
+			make_sorting_header(S_STATUS,'wt.status')));
 
 		$any_app_exist = false;
 
@@ -444,7 +438,7 @@ include_once('include/page_header.php');
 				' LEFT JOIN hosts h on h.hostid=a.hostid '.
 			' WHERE '.DBcondition('a.applicationid',$db_appids).
 				($showdisabled==0?' AND wt.status <> 1':'').
-			order_by('wt.name','h.host');
+			order_by('wt.name,wt.status','h.host');
 //SDI($sql);
 		$db_httptests_res = DBselect($sql);
 		while($httptest_data = DBfetch($db_httptests_res)){
@@ -561,13 +555,6 @@ include_once('include/page_header.php');
 		$goButton = new CButton('goButton',S_GO.' (0)');
 		$goButton->setAttribute('id','goButton');
 
-		$jsLocale = array(
-			'S_CLOSE',
-			'S_NO_ELEMENTS_SELECTED'
-		);
-
-		zbx_addJSLocale($jsLocale);
-
 		zbx_add_post_js('chkbxRange.pageGoName = "group_httptestid";');
 
 		$table->setFooter(new CCol(array($goBox, $goButton)));
@@ -576,7 +563,7 @@ include_once('include/page_header.php');
 
 		$http_wdgt->addItem($form);
 	}
-	
+
 	$http_wdgt->show();
 
 

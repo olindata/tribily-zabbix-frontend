@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2009 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ require_once('include/forms.inc.php');
 $page['title'] = 'S_CONFIGURATION_OF_NETWORK_MAPS';
 $page['file'] = 'sysmap.php';
 $page['hist_arg'] = array('sysmapid');
-$page['scripts'] = array('scriptaculous.js?load=effects,dragdrop','class.cmap.js');
+$page['scripts'] = array('effects.js', 'dragdrop.js','class.cmap.js');
 $page['type'] = detect_page_type();
 
 include_once('include/page_header.php');
@@ -85,7 +85,6 @@ include_once('include/page_header.php');
 <?php
 // ACTION /////////////////////////////////////////////////////////////////////////////
 	if(isset($_REQUEST['favobj'])){
-
 		$json = new CJSON();
 		if('sysmap' == $_REQUEST['favobj']){
 			$sysmapid = get_request('sysmapid',0);
@@ -97,22 +96,19 @@ include_once('include/page_header.php');
 
 					$options = array(
 						'sysmapids'=> $sysmapid,
-						'editable'=>1,
-						'extendoutput'=>1,
-						'select_selements'=>1,
-						'select_links'=>1
+						'editable' => 1,
+						'output' => API_OUTPUT_EXTEND,
+						'select_selements' => API_OUTPUT_EXTEND,
+						'select_links' => API_OUTPUT_EXTEND
 					);
 
 					$sysmaps = CMap::get($options);
 					$db_map = reset($sysmaps);
 
 					expandMapLabels($db_map);
-
-					$expandProblem = ($db_map['highlight'] > 1)? 0 : 1;
-					$map_info = getSelementsInfo($db_map, $expandProblem);
-//SDII($db_map);
+					$map_info = getSelementsInfo($db_map);
 					add_elementNames($db_map['selements']);
-
+//SDII($db_map);
 					$action .= 'ZBX_SYSMAPS['.$cmapid.'].map.mselement["label_location"]='.$db_map['label_location'].'; '."\n";
 
 					foreach($db_map['selements'] as $snum => $selement){
@@ -136,12 +132,16 @@ include_once('include/page_header.php');
 
 							$link['linktriggers'][$lnum]['desc_exp'] = $description;
 						}
-
+						order_result($link['linktriggers'], 'desc_exp');
 						$action .= 'ZBX_SYSMAPS['.$cmapid.'].map.add_link('.zbx_jsvalue($link).'); '."\n";
 					}
 
-					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.update_mapimg(); '."\n";
-					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.update_selements_icon(); '."\n";
+					unset($db_map['selements']);
+					unset($db_map['links']);
+
+					$action .= 'ZBX_SYSMAPS['.$cmapid.'].map.sysmap = '.zbx_jsvalue($db_map, true).";\n";
+					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.updateMapImage(); '."\n";
+					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.updateSelementsIcon(); '."\n";
 
 					print($action);
 					break;
@@ -149,9 +149,9 @@ include_once('include/page_header.php');
 					$options = array(
 							'sysmapids'=> $sysmapid,
 							'editable'=>1,
-							'extendoutput'=>1,
-							'select_selements'=>1,
-							'select_links'=>1
+							'output'=> API_OUTPUT_EXTEND,
+							'select_selements'=>API_OUTPUT_EXTEND,
+							'select_links'=>API_OUTPUT_EXTEND
 						);
 					$sysmaps = CMap::get($options);
 					if(empty($sysmaps)) print('alert("Access denied!");');
@@ -183,17 +183,18 @@ include_once('include/page_header.php');
 							}
 							if(isset($selement['new'])){
 								$selement['sysmapid'] = $sysmapid;
-								$selementid = add_element_to_sysmap($selement);
+								$selementids = CMap::addElements($selement);
+								$selementid = reset($selementids);
 
 								foreach($links as $id => $link){
-									if($link['selementid1'] == $selement['selementid']) $links[$id]['selementid1']=$selementid;
-									else if($link['selementid2'] == $selement['selementid']) $links[$id]['selementid2']=$selementid;
+									if($link['selementid1'] == $selement['selementid']) $links[$id]['selementid1'] = $selementid;
+									else if($link['selementid2'] == $selement['selementid']) $links[$id]['selementid2'] = $selementid;
 								}
 							}
 							else{
 //SDII($selement);
 								$selement['sysmapid'] = $sysmapid;
-								$result = update_sysmap_element($selement);
+								$result = CMap::updateElements($selement);
 								unset($db_selementids[$selement['selementid']]);
 							}
 						}
@@ -248,22 +249,23 @@ include_once('include/page_header.php');
 					$selements = get_request('selements', '[]');
 					$selements = $json->decode($selements, true);
 
-					if(!empty($selements)){
-						$selement = reset($selements);
-
-//						$selement['image'] = get_base64_icon($element);
-						$selement['image'] = get_selement_iconid($selement);
-						$selement['label_expanded'] = expand_map_element_label_by_data($selement);
-
-						$action = '';
-						$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.add_selement('.zbx_jsvalue($selement).',1);';
-//						$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.update_mapimg();';
-
-						print($action);
-					}
-					else{
+					if(empty($selements)){
 						print('ZBX_SYSMAPS['.$cmapid.'].map.info("'.S_GET_IMG_ELEMENT_DATA_NOT_FOUND.'"); ');
+						break;
 					}
+
+					$selement = reset($selements);
+					$selement['sysmapid'] = $sysmapid;
+
+//					$selement['image'] = get_base64_icon($element);
+					$selement['image'] = get_selement_iconid($selement);
+					$selement['label_expanded'] = expand_map_element_label_by_data($selement);
+
+					$action = '';
+					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.add_selement('.zbx_jsvalue($selement).',1);';
+//					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.updateMapImage();';
+
+					print($action);
 				break;
 				case 'new_selement':
 					$default_icon = get_default_image(false);
@@ -280,7 +282,7 @@ include_once('include/page_header.php');
 
 						$action = '';
 						$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.add_selement('.zbx_jsvalue($selement).',1);';
-						$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.update_mapimg();';
+						$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.updateMapImage();';
 						$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.show_selement_list();';
 
 						print($action);
@@ -313,7 +315,6 @@ include_once('include/page_header.php');
 			'editable' => 1,
 			'extendoutput' => 1,
 		);
-
 		$maps = CMap::get($options);
 
 		if(empty($maps)) access_deny();
@@ -325,30 +326,22 @@ include_once('include/page_header.php');
 	echo SBR;
 
 // ELEMENTS
-	$el_add = new CDiv(SPACE,'iconplus');
-	$el_add->setAttribute('title',S_ADD_ELEMENT);
+	$el_add = new CIcon(S_ADD_ELEMENT, 'iconplus');
 	$el_add->setAttribute('id','selement_add');
 
-	$el_rmv = new CDiv(SPACE,'iconminus');
-	$el_rmv->setAttribute('title',S_REMOVE_ELEMENT);
+	$el_rmv = new CIcon(S_REMOVE_ELEMENT, 'iconminus');
 	$el_rmv->setAttribute('id','selement_rmv');
-
 //-----------------
 
 // CONNECTORS
-//		echo BR;
-//		show_table_header("CONNECTORS", new CButton("form","Create connection","return Redirect('".$page["file"]."?form=add_link".url_param("sysmapid")."');"));
-
-//		$table->Show();
-
-	$cn_add = new CDiv(SPACE,'iconplus');
-	$cn_add->setAttribute('title',S_ADD_LINK);
+	$cn_add = new CIcon(S_ADD_LINK, 'iconplus');
 	$cn_add->setAttribute('id','link_add');
 
-	$cn_rmv = new CDiv(SPACE,'iconminus');
-	$cn_rmv->setAttribute('title',S_REMOVE_LINK);
+	$cn_rmv = new CIcon(S_REMOVE_LINK, 'iconminus');
 	$cn_rmv->setAttribute('id','link_rmv');
+//------------------------
 
+// Side Menu
 	$elcn_tab = new CTable();
 	$elcn_tab->addRow(array(bold('E'),bold('L')));
 	$elcn_tab->addRow(array($el_add,$cn_add));
@@ -356,13 +349,43 @@ include_once('include/page_header.php');
 
 	$td = new CCol($elcn_tab);
 	$td->setAttribute('valign','top');
-//------------------------\
-
+//----
 	$save_btn = new CButton('save',S_SAVE);
 	$save_btn->setAttribute('id','sysmap_save');
 
 	$elcn_tab = new CTable(null,'textwhite');
-	$elcn_tab->addRow(array(S_ELEMENT.'[',$el_add,$el_rmv,']',SPACE,SPACE,S_LINK.'[',$cn_add,$cn_rmv,']'));
+	$menuRow = array();
+
+	$gridShow = new CSpan(S_SHOWN, 'whitelink');
+	$gridShow->setAttribute('id', 'gridshow');
+
+	$gridAutoAlign = new CSpan(S_ON,'whitelink');
+	$gridAutoAlign->setAttribute('id', 'gridautoalign');
+
+
+	$gridSize = new CComboBox('gridsize');
+	$gridSize->addItem('20x20', '20x20');
+	$gridSize->addItem('40x40', '40x40');
+	$gridSize->addItem('50x50', '50x50', 1);
+	$gridSize->addItem('75x75', '75x75');
+	$gridSize->addItem('100x100', '100x100');
+
+	$gridAlignAll = new CButton('gridalignall', S_ALIGN_ICONS);
+	$gridAlignAll->setAttribute('id', 'gridalignall');
+
+	$gridForm = new CDiv(array($gridSize, $gridAlignAll));
+	$gridForm->setAttribute('id', 'gridalignblock');
+
+	array_push($menuRow, S_MAP . ' "'.$sysmap['name'].'"');
+	array_push($menuRow, SPACE.SPACE);
+	array_push($menuRow, S_ICON.' [',$el_add,$el_rmv,']');
+	array_push($menuRow, SPACE.SPACE);
+	array_push($menuRow, S_LINK.' [',$cn_add,$cn_rmv,']');
+	array_push($menuRow, SPACE.SPACE);
+	array_push($menuRow, S_GRID.' [',$gridShow,'|',$gridAutoAlign,']');
+	array_push($menuRow, SPACE, $gridForm);
+
+	$elcn_tab->addRow($menuRow);
 //	show_table_header($map['name'], $save_btn);
 	show_table_header($elcn_tab, $save_btn);
 
@@ -380,30 +403,11 @@ include_once('include/page_header.php');
 	$container->setAttribute('style','position: absolute;');
 	$container->Show();
 
-	$jsLocale = array(
-			'S_EDIT_MAP_ELEMENT',
-			'S_TYPE','S_LABEL',
-			'S_LABEL_LOCATION','S_HOST',
-			'S_MAP','S_TRIGGER','S_SELECT',
-			'S_HOST_GROUP','S_IMAGE','S_ICON_OK',
-			'S_ICON_PROBLEM','S_ICON_UNKNOWN',
-			'S_ICON_MAINTENANCE','S_ICON_DISABLED','S_ICON_DEFAULT',
-			'S_COORDINATE_X','S_COORDINATE_Y',
-			'S_URL','S_BOTTOM','S_TOP','S_LEFT','S_RIGHT','S_DEFAULT',
-			'S_APPLY','S_REMOVE','S_CLOSE',
-			'S_MAP_ELEMENTS','S_MAP_LINKS','S_CONNECTORS',
-			'S_ELEMENT','S_LINK_STATUS_INDICATOR',
-			'S_LINK','S_EDIT_CONNECTOR','S_TRIGGERS','S_COLOR',
-			'S_ADD','S_TYPE_OK','S_COLOR_OK','S_LINK_INDICATORS',
-			'S_TYPE_PROBLEM','S_COLOR_PROBLEM','S_DESCRIPTION',
-			'S_LINE','S_BOLD_LINE','S_DOT','S_DASHED_LINE','S_USE_ADVANCED_ICONS'
-		);
-
-	zbx_addJSLocale($jsLocale);
 	insert_js(get_selement_icons());
 	insert_show_color_picker_javascript();
 
 	zbx_add_post_js('create_map("sysmap_cnt", "'.$sysmap['sysmapid'].'");');
+
 ?>
 <?php
 

@@ -46,11 +46,9 @@ class CFormTable extends CForm{
 
 		parent::__construct($action,$method,$enctype);
 		$this->setTitle($title);
-		$this->setAlign('center');
 		$this->setHelp();
 
 		$this->addVar($form_variable, get_request($form_variable, 1));
-		$this->addVar('form_refresh',get_request('form_refresh',0)+1);
 
 		$this->bottom_items = new CCol(SPACE,'form_row_last');
 			$this->bottom_items->setColSpan(2);
@@ -88,7 +86,8 @@ class CFormTable extends CForm{
 			return 0;
 		}
 
-		$this->title = unpack_object($value);
+		// $this->title = unpack_object($value);
+		$this->title = $value;
 	}
 
 	public function setHelp($value=NULL){
@@ -106,6 +105,7 @@ class CFormTable extends CForm{
 		else {
 			return $this->error('Incorrect value for setHelp ['.$value.']');
 		}
+
 	return 0;
 	}
 
@@ -119,7 +119,6 @@ class CFormTable extends CForm{
 
 	public function addRow($item1, $item2=NULL, $class=NULL){
 		if(is_object($item1) && zbx_strtolower(get_class($item1)) == 'crow'){
-
 		}
 		else if(is_object($item1) && zbx_strtolower(get_class($item1)) == 'ctable'){
 			$td = new CCol($item1,'form_row_c');
@@ -130,7 +129,7 @@ class CFormTable extends CForm{
 		else{
 			$tmp = $item1;
 			if(is_string($item1)){
-				$item1=nbsp($item1);
+				$item1 = nbsp($item1);
 			}
 
 			if(empty($item1)) $item1 = SPACE;
@@ -145,6 +144,8 @@ class CFormTable extends CForm{
 		}
 
 		array_push($this->center_items, $item1);
+
+	return $item1;
 	}
 
 	public function addSpanRow($value, $class=NULL){
@@ -175,10 +176,10 @@ class CFormTable extends CForm{
 
 		$tbl = new CTable(NULL,$this->tableclass);
 
-		foreach($this->top_items as $item)	$tbl->additem($item);
+		foreach($this->top_items as $item)	$tbl->addItem($item);
 
-		$tbl->setOddRowClass('form_odd_row');
-		$tbl->setEvenRowClass('form_even_row');
+		//$tbl->setOddRowClass('form_odd_row');
+		//$tbl->setEvenRowClass('form_even_row');
 
 		$tbl->setCellSpacing(0);
 		$tbl->setCellPadding(1);
@@ -189,8 +190,13 @@ class CFormTable extends CForm{
 			$col = new CCol(NULL,'form_row_first');
 			$col->setColSpan(2);
 
-			if(isset($this->help))			$col->addItem($this->help);
-			if(isset($this->title))		 	$col->addItem($this->title);
+			if(isset($this->help)){
+				$col->addItem($this->help);
+			}
+
+			if(isset($this->title)){
+				$col->addItem($this->title);
+			}
 
 			$tbl->setHeader($col);
 		}

@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2009 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -19,20 +19,20 @@
 **/
 ?>
 <?php
-	require_once('include/config.inc.php');
-	require_once('include/acknow.inc.php');
-	require_once('include/triggers.inc.php');
-	require_once('include/forms.inc.php');
+require_once('include/config.inc.php');
+require_once('include/acknow.inc.php');
+require_once('include/triggers.inc.php');
+require_once('include/forms.inc.php');
 
-	$page['title']	= 'S_ACKNOWLEDGES';
-	$page['file']	= 'acknow.php';
-	$page['hist_arg'] = array('eventid');
+$page['title']	= 'S_ACKNOWLEDGES';
+$page['file']	= 'acknow.php';
+$page['hist_arg'] = array('eventid');
 
 include_once('include/page_header.php');
 
 ?>
 <?php
-	$_REQUEST['go'] = get_request('go', 'none');
+	$_REQUEST['go'] = get_request('go', null);
 	$bulk = ($_REQUEST['go'] == 'bulkacknowledge');
 
 //		VAR				TYPE	OPTIONAL FLAGS	VALIDATION	EXCEPTION
@@ -54,8 +54,8 @@ include_once('include/page_header.php');
 	if(isset($_REQUEST['cancel'])){
 		$last_page = $USER_DETAILS['last_page'];
 		$url = $last_page ? new CUrl($last_page['url']) : new CUrl('tr_status.php?hostid='.CProfile::get('web.tr_status.hostid', 0));
-		redirect($url->getUrl());
-		exit;
+		jsRedirect($url->getUrl());
+		exit();
 	}
 
 	if(!isset($_REQUEST['events']) && !isset($_REQUEST['eventid']) && !isset($_REQUEST['triggers'])){
@@ -66,12 +66,10 @@ include_once('include/page_header.php');
 	$bulk = !isset($_REQUEST['eventid']);
 ?>
 <?php
-
-
 	if(!$bulk){
 		$options = array(
-			'extendoutput' => 1,
-			'select_triggers' => 1,
+			'output' => API_OUTPUT_EXTEND,
+			'select_triggers' => API_OUTPUT_EXTEND,
 			'eventids' => $_REQUEST['eventid']
 		);
 		$events = CEvent::get($options);
@@ -121,8 +119,9 @@ include_once('include/page_header.php');
 			else{
 				$url = new CUrl($last_page['url']);
 			}
-			redirect($url->getUrl());
-			exit;
+
+			jsRedirect($url->getUrl());
+			exit();
 		}
 
  	}
@@ -131,7 +130,8 @@ include_once('include/page_header.php');
 <?php
 	$msg = $bulk ? ' BULK ACKNOWLEDGE ' : expand_trigger_description_by_data($event_trigger);
 	show_table_header(array(S_ALARM_ACKNOWLEDGES_BIG.': ', $msg));
-
+	print(SBR);
+	
 	if($bulk){
 		$title = S_ACKNOWLEDGE_ALARM_BY;
 		$btn_txt2 = S_ACKNOWLEDGE.' '.S_AND_SYMB.' '.S_RETURN;
@@ -143,12 +143,12 @@ include_once('include/page_header.php');
 			$table->setAlign('center');
 
 			while($db_ack = DBfetch($db_acks)){
-				$db_user = CUser::get(array('userids' => $db_ack['userid'], 'extendoutput' => 1));
-				$db_user = reset($db_user);
+				//$db_user = CUser::get(array('userids' => $db_ack['userid'], 'extendoutput' => 1));
+				//$db_user = reset($db_user);
 
 				$table->addRow(array(
-					new CCol($db_user['alias'], 'user'),
-					new CCol(date(S_DATE_FORMAT_YMDHMS, $db_ack['clock']), 'time')),
+					new CCol($db_ack['alias'], 'user'),
+					new CCol(zbx_date2str(S_ACKNOWLEDGE_DATE_FORMAT, $db_ack['clock']), 'time')),
 					'title');
 
 				$msgCol = new CCol(zbx_nl2br($db_ack['message']));
@@ -196,5 +196,9 @@ include_once('include/page_header.php');
 
 	$frmMsg->show(false);
 
+?>
+<?php
+
 include_once('include/page_footer.php');
+
 ?>

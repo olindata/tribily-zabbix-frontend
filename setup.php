@@ -25,7 +25,7 @@ require_once('include/requirements.inc.php');
 
 /* ******** */
 
-$page['title'] = 'S_INSTALLATION';
+$page['title'] = "S_INSTALLATION";
 $page['file'] = 'setup.php';
 
 if(!defined('PAGE_HEADER_LOADED'))
@@ -73,7 +73,6 @@ if(!defined('PAGE_HEADER_LOADED'))
 	if(isset($_REQUEST['cancel']) || isset($_REQUEST['finish'])){
 		zbx_unsetcookie('ZBX_CONFIG');
 		redirect('index.php');
-		exit;
 	}
 
 	$ZBX_CONFIG = get_cookie('ZBX_CONFIG', null);

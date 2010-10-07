@@ -36,7 +36,7 @@
 //------------------------------------- </HISTORY> --------------------------------------
 
 	CProfile::flush();
-	
+
 // END Transactions if havn't been -----------------
 	if(isset($DB) && isset($DB['TRANSACTIONS']) && ($DB['TRANSACTIONS'] != 0)){
 		error(S_TRANSACTION_HAVE_NOT_BEEN_CLOSED_ABORTING);
@@ -58,7 +58,9 @@
 		$post_script.= 'var page_refresh = null;'."\n";
 
 		if(isset($JS_TRANSLATE)){
-			$post_script.='var locale = '.zbx_jsvalue($JS_TRANSLATE)."\n";
+			$post_script.='var newLocale = '.zbx_jsvalue($JS_TRANSLATE)."\n";
+			$post_script.='var locale = (typeof(locale) == "undefined" ? {} : locale);'."\n";
+			$post_script.='for(key in newLocale){locale[key] = newLocale[key];}'."\n";
 		}
 
 		$post_script.= 'function zbxCallPostScripts(){'."\n";
@@ -75,12 +77,9 @@
 
 		$post_script.= 'cookie.init();'."\n";
 		$post_script.= 'chkbxRange.init();'."\n";
+		$post_script.= 'if(IE6){ie6pngfix.run(false);}'."\n";
 
 		$post_script.='}'."\n";
-//		$post_script.= 'try{ chkbxRange.init(); } catch(e){ throw("Checkbox extension failed!");}';
-
-
-		insert_js($post_script);
 
 		if(!defined('ZBX_PAGE_NO_MENU') && !defined('ZBX_PAGE_NO_FOOTER')){
 			$table = new CTable(NULL,"page_footer");
@@ -101,7 +100,9 @@
 			$table->show();
 		}
 
-		echo "</body>\n";
+		insert_js($post_script);
+
+		echo "</body>\n";		
 		echo "</html>\n";
 	}
 

@@ -52,10 +52,11 @@ return false;
 
 function empty(obj){
 	if(is_null(obj)) return true;
-	if(obj == false) return true;
-	if((obj == 0) || (obj == '0')) return true;
-	if(is_string(obj) && (obj == '')) return true;
+	if(obj === false) return true;
+//if((obj == 0) || (obj == '0')) return true;
+	if(is_string(obj) && (obj === '')) return true;
 	if(is_array(obj) && (obj.length == 0)) return true;
+
 return false;
 }
 
@@ -67,6 +68,17 @@ return false;
 function is_number(obj){
 	if(isNaN(obj)) return false;
 	if(typeof(obj) === 'number') return true;
+return false;
+}
+
+function is_object(obj, instance){
+	if((typeof(instance) === 'object') || (typeof(instance) === 'function')){
+		if((typeof(obj) === 'object') && (obj instanceof instance)) return true;
+	}
+	else{
+		if(typeof(obj) === 'object') return true;
+	}
+
 return false;
 }
 
@@ -84,10 +96,12 @@ function SDI(msg){
 	if((div_help == 'undefined') || empty(div_help)){
 		var div_help = document.createElement('div');
 		var doc_body = document.getElementsByTagName('body')[0];
+		if(empty(doc_body)) return false;
+		
 		doc_body.appendChild(div_help);
 		
 		div_help.setAttribute('id','div_help');
-		div_help.setAttribute('style','position: absolute; right: 100px; top: 10px; border: 1px red solid; width: 500px; height: 400px; background-color: white; font-size: 12px; overflow: auto; z-index: 20;');
+		div_help.setAttribute('style','position: absolute; left: 10px; top: 100px; border: 1px red solid; width: 400px; height: 400px; background-color: white; font-size: 12px; overflow: auto; z-index: 20;');
 		
 //		new Draggable(div_help,{});
 	}
@@ -105,38 +119,17 @@ function SDI(msg){
 
 }
 
-function INFO(msg){
-	var div_info = document.getElementById('div_info');
-
-	if((div_info == 'undefined') || empty(div_info)){
-		var div_info = document.createElement('div');
-		var doc_body = document.getElementsByTagName('body')[0];
-		doc_body.appendChild(div_info);
-		
-		div_info.setAttribute('id','div_info');
-		div_info.setAttribute('style','position: absolute; left: 20px; top: 20px; height: 200px; width: 480px; border: 1px grey solid; background-color: white; font-size: 12px; overflow: auto; z-index: 20;');
-	}
-	
-	var pre = document.createElement('pre');
-	pre.appendChild(document.createTextNode(msg));
-	
-	div_info.appendChild(document.createTextNode("INFO: "));
-	div_info.appendChild(document.createElement("br"));
-	div_info.appendChild(pre);
-	div_info.appendChild(document.createElement("br"));
-	
-	div_info.scrollTop = div_info.scrollHeight;
-}
-
-function SDJ(obj){
+function SDJ(obj, name){
 	var debug = '';
 //	debug = obj.toSource();
 //	SDI(debug);
 //return null;
 
+	name = name || 'none';
 	for(var key in obj){
-		var value = obj[key];
-		debug+=key+': '+value+'  key: '+typeof(key)+'\n';
+		if(typeof(obj[key]) == name) continue;
+
+		debug+=key+': '+obj[key]+' ('+typeof(obj[key])+')'+'\n';//' key: '+typeof(key)+'\n';
 	}
 	SDI(debug);
 }
@@ -190,8 +183,8 @@ return true;
 }
 
 function cancelEvent(e){
-	if (!e) var e = window.event;	
-//SDI(e);
+	if(!e) var e = window.event;
+//SDI(e.type);
 	if(e){
 		if(IE){
 			e.cancelBubble = true;
@@ -202,6 +195,7 @@ function cancelEvent(e){
 			e.preventDefault();
 		}
 	}
+
 return false;
 }
 
@@ -318,19 +312,6 @@ function deselectAll(){
 	}
 }
 
-function eventTarget(e){
-	var targ = false;
-
-	if (!e) var e = window.event;
-	if (e.target) targ = e.target;
-	else if (e.srcElement) targ = e.srcElement;
-
-// defeat Safari bug
-	if (targ.nodeType == 3) targ = targ.parentNode;
-
-return targ;
-}
-
 function getDimensions(obj, trueSide){
 	obj = $(obj);
 	
@@ -384,6 +365,7 @@ function getPosition(obj){
 		try{
 			while(!is_null(obj.offsetParent)){
 				obj=obj.offsetParent;
+
 				pos.left += obj.offsetLeft;
 				pos.top += obj.offsetTop;
 
@@ -423,9 +405,9 @@ function get_bodywidth(){
 		w-=16;
 	}
 	else{
-		w = (w2 > w)?w2:w;
+		w = (w2 < w)?w2:w;
 	}
-
+//alert(w);
 return w;
 }
 
@@ -466,9 +448,9 @@ function get_scroll_pos(){
 	return [ scrOfX, scrOfY ];
 }
 
-function insert_in_element(element_name, text){
+function insertInElement(element_name, text, tagName){
 	if(IE)
-		var elems = $$('[name='+element_name+']');
+		var elems = $$(tagName+'[name='+element_name+']');
 	else
 		var elems = document.getElementsByName(element_name);
 
@@ -477,30 +459,6 @@ function insert_in_element(element_name, text){
 			$(elems[key]).update(text);
 		}
 	}
-}
-
-function insert_sizeable_graph(graph_id,url){
-	if((typeof(ZBX_G_WIDTH) != 'undefined')) url += "&amp;width="+ZBX_G_WIDTH;
-
-	document.write('<img id="'+graph_id+'" src="'+url+'" alt="graph" /><br />');
-}
-
-function is_empty_form(id){
-	id = $(id);
-	var count = 0;
-
-	var inputs = id.getElementsByTagName('input');
-	for(var i=0; i<inputs.length;i++){
-		if((inputs[i].type == 'text') && (typeof(inputs[i].hidden) == 'undefined') && !empty(inputs[i].value)) return false;
-		if((inputs[i].type == 'checkbox') && (inputs[i].checked)) return false;
-	}
-
-	var selects = id.getElementsByTagName('select');
-	for(var i=0; i<selects.length;i++){
-		if((typeof(selects[i].hidden) == 'undefined') && (selects[i].selectedIndex)) return false;
-	}
-
-return true;
 }
 
 function openWinCentered(loc, winname, iwidth, iheight, params){
@@ -518,8 +476,8 @@ function openWinCentered(loc, winname, iwidth, iheight, params){
 }
 
 function PopUp(url,width,height,form_name){
-	if(!width) width = 600;
-	if(!height) height = 450;
+	if(!width) width = 720;
+	if(!height) height = 480;
 	if(!form_name) form_name = 'zbx_popup';
 
 	var left = (screen.width-(width+150))/2; 
@@ -533,11 +491,42 @@ function PopUp(url,width,height,form_name){
 	return false;
 }
 
-function redirect(uri) {
-	uri = new Curl(uri);
-	var loc = uri.getUrl();
-	window.location = loc;
-	return false;
+function redirect(uri, method, needle) {
+	var method = method || 'get';
+	var url = new Curl(uri);
+
+	if(method.toLowerCase() == 'get'){
+		window.location = url.getUrl();
+	}
+	else{
+// ussless param just for easier loop
+		var action = '';
+
+		var domBody = document.getElementsByTagName('body')[0];
+		var postForm = document.createElement('form');
+		domBody.appendChild(postForm);
+		postForm.setAttribute('method', 'post');
+
+		var args = url.getArguments();
+		for(var key in args){
+			if(empty(args[key])) continue;
+			if((typeof(needle) != 'undefined') && (key.indexOf(needle) > -1)){
+				action += '&'+key+'='+args[key];
+				continue;
+			}
+			var hInput = document.createElement('input');
+			hInput.setAttribute('type', 'hidden');
+
+			postForm.appendChild(hInput);
+			hInput.setAttribute('name', key);
+			hInput.setAttribute('value', args[key]);
+		}
+
+		postForm.setAttribute('action', url.getPath()+'?'+action.substr(1));
+		postForm.submit();
+	}
+
+return false;
 }
 
 function removeListener(element, eventname, expression, bubbling){
@@ -676,18 +665,34 @@ function switchElementsClass(obj,class1,class2){
 	obj = $(obj);
 	if(!obj) return false;
 
-	if(obj.className == class1){
-		obj.className = class2;
-		return class2;
+	var result = false;
+	if(obj.hasClassName(class1)){
+		obj.removeClassName(class1);
+		obj.className = class2 + ' ' + obj.className;
+		result = class2;
+	}
+	else if(obj.hasClassName(class2)){
+		obj.removeClassName(class2);
+		obj.className =  class1 + ' ' + obj.className;
+		result = class1;
 	}
 	else{
-		obj.className = class1;
-		return class1;
+		obj.className = class1 + ' ' + obj.className;
+		result = class1;
 	}
-return false;
+	
+	if(IE6){
+		obj.style.filter = '';
+		obj.style.backgroundImage = '';
+		ie6pngfix.run();
+	}
+
+return result;
 }
 
-
+function zbx_throw(msg){
+	throw(msg);
+}
 /************************************************************************************/
 /*									Pages stuff										*/
 /************************************************************************************/
@@ -707,49 +712,4 @@ function ScaleChartToParenElement(obj_name){
 	for(i = obj.length-1; i>=0; i--){
 		obj[i].src += "&width=" + (obj[i].parentNode.offsetWidth - obj[i].parentNode.offsetLeft - 10);
 	}
-}
-
-
-/************************************************************************************/
-/*										IE 6 FIXES 									*/
-/************************************************************************************/
-
-function hidePopupDiv(iFrameID){
-	if(!IE6) return;
-
-	$(iFrameID).hide();
-	$(iFrameID).remove();
-}
-
-function showPopupDiv(divID,iFrameID){
-	if(!IE6) return;
-
-	var iFrame = $(iFrameID);
-	var divPopup = $(divID);
-
-	if(is_null(iFrame)){
-		var iFrame = document.createElement('iframe');
-		document.body.appendChild(iFrame);
-		
-		//Match IFrame position with divPopup
-		iFrame.setAttribute('id',iFrameID);
-		iFrame.style.position='absolute';
-	}
-	
-	if(divPopup.style.display == 'none'){
-		iFrame.style.display = 'none';
-		return;
-	}
-
-//Increase default zIndex of div by 1, so that DIV appears before IFrame
-	divPopup.style.zIndex=divPopup.style.zIndex+1;
-//	iFrame.style.zIndex = 1;
-
-
-	var divCumOff = $(divID).cumulativeOffset();
-	iFrame.style.display = 'block';
-	iFrame.style.left = divCumOff.left + 'px';
-	iFrame.style.top = divCumOff.top + 'px';
-	iFrame.style.width = divPopup.offsetWidth + 'px';
-	iFrame.style.height = divPopup.offsetHeight + 'px';
 }

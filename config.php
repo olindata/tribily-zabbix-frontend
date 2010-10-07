@@ -67,7 +67,7 @@ include_once('include/page_header.php');
 		'dropdown_first_entry'=>	array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	IN('0,1,2'),		'isset({config})&&({config}==8)&&isset({save})'),
 		'dropdown_first_remember'=>	array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	IN('0,1'),	NULL),
 		'max_in_table' => 			array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	BETWEEN(1,99999),	'isset({config})&&({config}==8)&&isset({save})'),
-		'search_limit' => 			array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	BETWEEN(1,99999),	'isset({config})&&({config}==8)&&isset({save})'),
+		'search_limit' => 			array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	BETWEEN(1,999999),	'isset({config})&&({config}==8)&&isset({save})'),
 /* Macros */
 		'macros_rem'=>			array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	NULL,	NULL),
 		'macros'=>				array(T_ZBX_STR, O_OPT, P_SYS,			NULL,	NULL),
@@ -111,26 +111,52 @@ include_once('include/page_header.php');
 	if($_REQUEST['config']==3){
 // IMAGES ACTIONS
 		if(isset($_REQUEST['save'])){
+
 			$file = isset($_FILES['image']) && $_FILES['image']['name'] != '' ? $_FILES['image'] : NULL;
+			if(!is_null($file)){
+				if($file['error'] != 0 || $file['size']==0){
+					error(S_INCORRECT_IMAGE);
+					return false;
+				}
+
+				if($file['size'] < ZBX_MAX_IMAGE_SIZE){
+					$image = fread(fopen($file['tmp_name'],'r'),filesize($file['tmp_name']));
+				}
+				else{
+					error(S_IMAGE_SIZE_MUST_BE_LESS_THAN_MB);
+					return false;
+				}
+			}
+
 			if(isset($_REQUEST['imageid'])){
-// UPDATE
-				DBstart();
-				$result = update_image($_REQUEST['imageid'],$_REQUEST['name'],$_REQUEST['imagetype'],$file);
-				$result = DBend($result);
+				$val = array(
+					'imageid' => $_REQUEST['imageid'],
+					'name' => $_REQUEST['name'],
+					'imagetype' => $_REQUEST['imagetype'],
+					'image' => is_null($file) ? null : $image
+				);
+				$result = CImage::update($val);
 
 				$msg_ok = S_IMAGE_UPDATED;
 				$msg_fail = S_CANNOT_UPDATE_IMAGE;
 				$audit_action = 'Image ['.$_REQUEST['name'].'] updated';
 			}
-			else {
-// ADD
+			else{
+				if(is_null($file)){
+					error(S_SELECT_IMAGE_TO_DOWNLOAD);
+					return false;
+				}
+
 				if(!count(get_accessible_nodes_by_user($USER_DETAILS,PERM_READ_WRITE,PERM_RES_IDS_ARRAY))){
 					access_deny();
 				}
 
-				DBstart();
-				$result = add_image($_REQUEST['name'], $_REQUEST['imagetype'], $file);
-				$result = DBend($result);
+				$val = array(
+					'name' => $_REQUEST['name'],
+					'imagetype' => $_REQUEST['imagetype'],
+					'image' => $image
+				);
+				$result = CImage::create($val);
 
 				$msg_ok = S_IMAGE_ADDED;
 				$msg_fail = S_CANNOT_ADD_IMAGE;
@@ -144,12 +170,9 @@ include_once('include/page_header.php');
 			}
 		}
 		else if(isset($_REQUEST['delete'])&&isset($_REQUEST['imageid'])) {
-// DELETE
 			$image = get_image_by_imageid($_REQUEST['imageid']);
 
-			DBstart();
-			$result = delete_image($_REQUEST['imageid']);
-			$result = DBend($result);
+			$result = CImage::delete(array('imageids' => $_REQUEST['imageid']));
 
 			show_messages($result, S_IMAGE_DELETED, S_CANNOT_DELETE_IMAGE);
 			if($result){
@@ -473,56 +496,57 @@ include_once('include/page_header.php');
 	}
 
 	else if($_REQUEST['config'] == 11){ // Macros
-	/* REMOVE MACROS */
-		if(isset($_REQUEST['macros_del']) && isset($_REQUEST['macros_rem'])){
-			$result = CUserMacro::deleteGlobalMacro(zbx_toObject($_REQUEST['macros_rem'], 'globalmacroid'));
-			show_messages($result, S_MACROS_DELETED, S_CANNOT_DELETE_MACROS);
+		if(isset($_REQUEST['save'])){
+			try{
+				DBstart();
+				$global_macros = CUserMacro::get(array('globalmacro' => 1, 'extendoutput' => 1));
+
+				$macros = get_request('macros', array());
+				
+				$macros_to_del = array();
+				foreach($global_macros as $gmacro){
+					$del = true;
+					foreach($macros as $nmacro){
+						if($gmacro['macro'] == $nmacro['macro']){
+							$del = false;
+							break;
+						}
+					}
+					if($del){
+						$macros_to_del[] = $gmacro;
+					}
+				}
+				if(!empty($macros_to_del)){
+					if(!CUserMacro::deleteGlobal($macros_to_del))
+						throw new Exception('Can\'t remove macro');
+				}
+
+				$result = CUsermacro::updateGlobal($macros);
+				if(!$result){
+					throw new Exception('Cannot update macro');
+				}
+
+				$result = CUsermacro::createGlobal($macros);
+				if(!$result){
+					throw new Exception('Cannot add macro');
+				}
+				
+				DBend(true);
+				show_messages(true, S_MACROS_UPDATED, S_CANNOT_UPDATE_MACROS);
+			}
+			catch(Exception $e){
+				DBend(false);
+				error($e->getMessage());
+				show_messages(false, S_MACROS_UPDATED, S_CANNOT_UPDATE_MACROS);
+			}
 		}
-	/* ADD MACRO */
-		if(isset($_REQUEST['macro_add'])){
-			$result = true;
-			$macro_new = get_request('macro_new');
-			$value_new = get_request('value_new', null);
-
-			if(!CUserMacro::validate(zbx_toObject($macro_new, 'macro'))){
-				error(S_WRONG_MACRO.' : '.$macro_new);
-				$result = false;
-			}
-			else if(zbx_empty($value_new)){
-				error(S_EMPTY_MACRO_VALUE);
-				$result = false;
-			}
-			else if(CUserMacro::getGlobalMacroId(array('macro' => $macro_new))){
-				error(S_MACRO_EXISTS);
-				$result = false;
-			}
-			else if(zbx_strlen($macro_new) > 64){
-				error(S_MACRO_TOO_LONG.' : '.$macro_new);
-				$result = false;
-			}
-			else if(zbx_strlen($value_new) > 255){
-				error(S_MACRO_VALUE_TOO_LONG.' : '.$value_new);
-				$result = false;
-			}
-			else{
-				$macro = array('macro' => $macro_new, 'value' => $value_new);
-				$result = CUserMacro::createGlobal($macro);
-			}
-
-
-			if($result){
-				unset($_REQUEST['macro_new']);
-				unset($_REQUEST['value_new']);
-			}
-			show_messages($result, S_MACRO_ADDED, S_CANNOT_ADD_MACRO);
-		}
+		
 	}
 ?>
 
 <?php
-	$form = new CForm('config.php');
-	$form->setMethod('get');
-	$cmbConfig = new CCombobox('config',$_REQUEST['config'],'submit()');
+	$form = new CForm('config.php', 'get');
+	$cmbConfig = new CCombobox('config',$_REQUEST['config'], 'javascript: redirect("config.php?config="+this.options[this.selectedIndex].value);');
 //	$cmbConfig->addItem(4,S_AUTOREGISTRATION);
 //	$cmbConfig->addItem(2,S_ESCALATION_RULES);
 	$cmbConfig->addItem(8,S_GUI);
@@ -889,6 +913,7 @@ include_once('include/page_header.php');
 		$combo_theme = new CComboBox('default_theme',$config['default_theme']);
 		$combo_theme->addItem('css_ob.css',S_ORIGINAL_BLUE);
 		$combo_theme->addItem('css_bb.css',S_BLACK_AND_BLUE);
+		$combo_theme->addItem('css_od.css',S_DARK_ORANGE);
 
 		$exp_select = new CComboBox('event_ack_enable');
 		$exp_select->addItem(EVENT_ACK_ENABLED,S_ENABLED,$config['event_ack_enable']?'yes':'no');
@@ -907,8 +932,8 @@ include_once('include/page_header.php');
 			S_DROPDOWN_REMEMBER_SELECTED
 			));
 
-		$frmGUI->addRow(S_SEARCH_LIMIT, new CTextBox('search_limit', $config['search_limit'], 5));
-		$frmGUI->addRow(S_MAX_IN_TABLE, new CTextBox('max_in_table', $config['max_in_table'], 5));
+		$frmGUI->addRow(S_SEARCH_LIMIT, new CNumericBox('search_limit', $config['search_limit'], 6));
+		$frmGUI->addRow(S_MAX_IN_TABLE, new CNumericBox('max_in_table', $config['max_in_table'], 5));
 		$frmGUI->addRow(S_EVENT_ACKNOWLEDGES,$exp_select);
 		$frmGUI->addRow(S_SHOW_EVENTS_NOT_OLDER.SPACE.'('.S_DAYS.')',
 			new CTextBox('event_expire',$config['event_expire'],5));
@@ -1065,43 +1090,14 @@ include_once('include/page_header.php');
 /////////////////////////////
 //  config = 11 // Macros  //
 /////////////////////////////
-	else if($_REQUEST['config']==11){ // Macros
-		$frmGUI = new CFormTable(S_MACROS, 'config.php');
-		$frmGUI->addVar('config', get_request('config', 11));
-
-		$macros = CUserMacro::get(array('extendoutput' => 1, 'globalmacro' => 1));
-
-		order_result($macros, 'macro');
-
-		$macros_list_tbl = new CTable(S_NO_MACROS_DEFINED);
-		foreach($macros as $macro){
-			$macros_list_tbl->addRow(array(
-				new CCheckBox('macros_rem['.$macro['globalmacroid'].']', 'no', null, $macro['globalmacroid']),
-				array(
-					new CTextBox('macros['.$macro['macro'].'][macro]', $macro['macro'], 20, true),
-					SPACE.RARR.SPACE,
-					new CTextBox('macros['.$macro['macro'].'][value]', $macro['value'], 20, true))
-			));
-		}
-
-		$delete_btn = new CButton('macros_del', S_DELETE_SELECTED);
-		if(count($macros) == 0){
-			$delete_btn->setAttribute('disabled', 'disabled');
-		}
-
-		$frmGUI->addRow(S_MACROS, $macros_list_tbl);
-		$frmGUI->addRow(S_NEW_MACRO, array(
-			new CTextBox('macro_new', get_request('macro_new', ''), 10),
-			new CSpan(RARR, 'rarr'),
-			new CTextBox('value_new', get_request('value_new', ''), 10),
-			SPACE,
-			new CButton('macro_add', S_ADD),
-		));
-
-		$frmGUI->addItemToBottomRow($delete_btn);
-
-		$cnf_wdgt->addItem($frmGUI);
-
+	else if($_REQUEST['config']==11){	// Macros		
+		$form = new CForm();
+		$tbl = new CTable();
+		$tbl->addRow(get_macros_widget());
+		$tbl->addStyle('width: 50%;');
+		$tbl->addStyle('margin: 0 auto;');
+		$form->addItem($tbl);
+		$cnf_wdgt->addItem($form);
 	}
 
 	$cnf_wdgt->show();

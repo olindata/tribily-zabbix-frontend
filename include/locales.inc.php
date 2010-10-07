@@ -20,19 +20,17 @@
 ?>
 <?php
 function init_mbstrings(){
-	if(!mbstrings_available()) return FALSE;
-
 	$res = true;
-// Set default internal encoding
-	$res&= (ini_set('mbstring.internal_encoding','UTF-8') === FALSE);
+	
+	$res &= mbstrings_available();
 
-// HTTP input encoding translation is enabled.
-	$res&= (ini_set('mbstring.encoding_translation','On') === FALSE);
-
-// Set default character encoding detection order
-	$res&= (ini_set('mbstring.detect_order','UTF-8, ISO-8859-1, JIS, SJIS') === FALSE);
-
-	if($res) define('ZBX_MBSTRINGS_ENABLED',1);
+	ini_set('mbstring.internal_encoding', 'UTF-8');
+	$res &= (ini_get('mbstring.internal_encoding') == 'UTF-8');
+		
+	ini_set('mbstring.detect_order', 'UTF-8, ISO-8859-1, JIS, SJIS');
+	$res &= (ini_get('mbstring.detect_order') == 'UTF-8, ISO-8859-1, JIS, SJIS');
+	
+	if($res) define('ZBX_MBSTRINGS_ENABLED', true);
 return $res;
 }
 
@@ -65,10 +63,11 @@ function set_zbx_locales(){
 	$ZBX_LOCALES = array(
 		'en_gb'=>  S_ENGLISH_GB,
 		'cn_zh'=>  S_CHINESE_CN,
+		'cs_cz'=>  S_CZECH_CZ,
 		'nl_nl'=>  S_DUTCH_NL,
 		'fr_fr'=>  S_FRENCH_FR,
 		'de_de'=>  S_GERMAN_DE,
-		'hu_hu'=>  S_HUNGARY_HU,
+		'hu_hu'=>  S_HUNGARIAN_HU,
 		'it_it'=>  S_ITALIAN_IT,
 		'ko_kr'=>  S_KOREAN_KO,
 		'ja_jp'=>  S_JAPANESE_JP,

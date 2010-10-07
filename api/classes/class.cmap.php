@@ -30,12 +30,6 @@ class CMap extends CZBXAPI{
 /**
  * Get Map data
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param _array $options
  * @param array $options['nodeids'] Node IDs
  * @param array $options['groupids'] HostGroup IDs
@@ -64,7 +58,6 @@ class CMap extends CZBXAPI{
 
 		$result = array();
 		$user_type = $USER_DETAILS['type'];
-		$userid = $USER_DETAILS['userid'];
 
 		$sort_columns = array('name'); // allowed columns for sorting
 		$subselects_allowed_outputs = array(API_OUTPUT_REFER, API_OUTPUT_EXTEND); // allowed output options for [ select_* ] params
@@ -72,7 +65,7 @@ class CMap extends CZBXAPI{
 
 		$sql_parts = array(
 			'select' => array('sysmaps' => 's.sysmapid'),
-			'from' => array('sysmaps s'),
+			'from' => array('sysmaps' => 'sysmaps s'),
 			'where' => array(),
 			'order' => array(),
 			'limit' => null);
@@ -189,7 +182,7 @@ class CMap extends CZBXAPI{
 		if(!empty($sql_parts['order']))		$sql_order.= ' ORDER BY '.implode(',',$sql_parts['order']);
 		$sql_limit = $sql_parts['limit'];
 
-		$sql = 'SELECT DISTINCT '.$sql_select.'
+		$sql = 'SELECT '.zbx_db_distinct($sql_parts).' '.$sql_select.'
 				FROM '.$sql_from.'
 				WHERE '.DBin_node('s.sysmapid', $nodeids).
 					$sql_where.
@@ -214,6 +207,23 @@ class CMap extends CZBXAPI{
 						$result[$sysmap['sysmapid']]['links'] = array();
 					}
 
+					if(isset($sysmap['highlight'])){
+						$sysmap['expandproblem'] = ($sysmap['highlight'] & ZBX_MAP_EXPANDPROBLEM) ? 0 : 1;
+						$sysmap['markelements'] = ($sysmap['highlight'] & ZBX_MAP_MARKELEMENTS) ? 1 : 0;
+
+						if(($sysmap['highlight'] & ZBX_MAP_EXTACK_SEPARATED) == ZBX_MAP_EXTACK_SEPARATED){
+							$sysmap['show_unack'] = EXTACK_OPTION_BOTH;
+						}
+						else if($sysmap['highlight'] & ZBX_MAP_EXTACK_UNACK){
+							$sysmap['show_unack'] = EXTACK_OPTION_UNACK;
+						}
+						else{
+							$sysmap['show_unack'] = EXTACK_OPTION_ALL;
+						}
+
+						$sysmap['highlight'] = ($sysmap['highlight'] & ZBX_MAP_HIGHLIGHT) ? 1 : 0;
+					}
+
 					$result[$sysmap['sysmapid']] += $sysmap;
 				}
 			}
@@ -223,7 +233,7 @@ class CMap extends CZBXAPI{
 		}
 		else{
 			if(!empty($result)){
-			
+
 				$link_triggers = array();
 				$sql = 'SELECT slt.triggerid, sl.sysmapid'.
 					' FROM sysmaps_link_triggers slt, sysmaps_links sl'.
@@ -234,7 +244,7 @@ class CMap extends CZBXAPI{
 				while($link_trigger = DBfetch($db_link_triggers)){
 					$link_triggers[$link_trigger['sysmapid']] = $link_trigger['triggerid'];
 				}
-				
+
 				$all_triggers = CTrigger::get(array(
 					'triggerids' => $link_triggers,
 					'editable' => $options['editable'],
@@ -247,8 +257,8 @@ class CMap extends CZBXAPI{
 						unset($sysmapids[$id]);
 					}
 				}
-		
-				
+
+
 				$hosts_to_check = array();
 				$maps_to_check = array();
 				$triggers_to_check = array();
@@ -430,18 +440,11 @@ COpt::memoryPick();
 /**
  * Get Sysmap IDs by Sysmap params
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $sysmap_data
  * @param array $sysmap_data['name']
  * @param array $sysmap_data['sysmapid']
  * @return string sysmapid
  */
-
 	public static function getObjects($sysmapData){
 		$options = array(
 			'filter' => $sysmapData,
@@ -476,22 +479,16 @@ COpt::memoryPick();
 
 	return !empty($objs);
 	}
-	
+
 /**
  * Add Map
- *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
  *
  * @param _array $maps
  * @param string $maps['name']
  * @param array $maps['width']
  * @param int $maps['height']
  * @param string $maps['backgroundid']
-  * @param string $maps['highlight']
+ * @param string $maps['highlight']
  * @param array $maps['label_type']
  * @param int $maps['label_location']
  * @return boolean | array
@@ -505,6 +502,18 @@ COpt::memoryPick();
 
 		self::BeginTransaction(__METHOD__);
 		foreach($maps as $mnum => $map){
+			if($map['markelements'] == 1) $map['highlight'] = $map['highlight'] | ZBX_MAP_MARKELEMENTS;
+			if($map['expandproblem'] == 0) $map['highlight'] = $map['highlight'] | ZBX_MAP_EXPANDPROBLEM;
+
+			if($map['show_unack'] == EXTACK_OPTION_BOTH){
+				$map['highlight'] = $map['highlight'] | ZBX_MAP_EXTACK_SEPARATED;
+			}
+			else if($map['show_unack'] == EXTACK_OPTION_UNACK){
+				$map['highlight'] = $map['highlight'] | ZBX_MAP_EXTACK_UNACK;
+			}
+			else if($map['show_unack'] == EXTACK_OPTION_ALL){
+				$map['highlight'] = $map['highlight'] | ZBX_MAP_EXTACK_TOTAL;
+			}
 
 			$map_db_fields = array(
 				'name' => null,
@@ -521,7 +530,7 @@ COpt::memoryPick();
 				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Wrong fields for map');
 				break;
 			}
-			
+
 			if(self::exists(array('name' => $map['name']))){
 				$result = false;
 				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Map [ '.$map['name'].' ] already exists.');
@@ -551,12 +560,6 @@ COpt::memoryPick();
 /**
  * Update Map
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param _array $maps multidimensional array with Hosts data
  * @param string $maps['sysmapid']
  * @param string $maps['name']
@@ -579,17 +582,29 @@ COpt::memoryPick();
 			'output' => API_OUTPUT_EXTEND
 		);
 		$db_sysmaps = self::get($options);
+		foreach($maps as $mnum => $map){
+			if(!isset($db_sysmaps[$map['sysmapid']])){
+				self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, 'Map with ID ['.$map['sysmapid'].'] does not exist');
+				return false;
+			}
+			$sysmapids[] = $map['sysmapid'];
+		}
 
 		self::BeginTransaction(__METHOD__);
 		foreach($maps as $mnum => $map){
-
-			$sysmapids[] = $map['sysmapid'];
 			$map_db_fields = $db_sysmaps[$map['sysmapid']];
 
-			if(!$map_db_fields){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Map with ID ['.$map['sysmapid'].'] does not exist');
-				break;
+			if($map['markelements'] == 1) $map['highlight'] = $map['highlight'] | ZBX_MAP_MARKELEMENTS;
+			if($map['expandproblem'] == 0) $map['highlight'] = $map['highlight'] | ZBX_MAP_EXPANDPROBLEM;
+
+			if($map['show_unack'] == EXTACK_OPTION_BOTH){
+				$map['highlight'] = $map['highlight'] | ZBX_MAP_EXTACK_SEPARATED;
+			}
+			else if($map['show_unack'] == EXTACK_OPTION_UNACK){
+				$map['highlight'] = $map['highlight'] | ZBX_MAP_EXTACK_UNACK;
+			}
+			else if($map['show_unack'] == EXTACK_OPTION_ALL){
+				$map['highlight'] = $map['highlight'] | ZBX_MAP_EXTACK_TOTAL;
 			}
 
 			if(!check_db_fields($map_db_fields, $map)){
@@ -600,7 +615,8 @@ COpt::memoryPick();
 
 			$options = array(
 				'filter' => array(
-					'name' => $map['name']),
+					'name' => $map['name']
+				),
 				'output' => API_OUTPUT_SHORTEN,
 				'editable' => 1,
 				'nopermissions' => 1
@@ -612,8 +628,8 @@ COpt::memoryPick();
 				$result = false;
 				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Map [ '.$map['name'].' ] '.S_ALREADY_EXISTS_SMALL);
 				break;
-			}				
-			
+			}
+
 			$sql = 'UPDATE sysmaps '.
 					' SET name='.zbx_dbstr($map['name']).','.
 						' width='.$map['width'].','.
@@ -642,12 +658,6 @@ COpt::memoryPick();
 /**
  * Delete Map
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $sysmaps
  * @param array $sysmaps['sysmapid']
  * @return boolean
@@ -660,12 +670,12 @@ COpt::memoryPick();
 
 		self::BeginTransaction(__METHOD__);
 
-// delete selements
+// delete maps from selements of other maps
 		$selementids = array();
-		$sql = 'SELECT selementid '.
-				' FROM sysmaps_elements '.
-				' WHERE '.DBcondition('sysmapid',$sysmapids).
-					' AND elementtype='.SYSMAP_ELEMENT_TYPE_MAP;
+		$sql = 'SELECT se.selementid '.
+				' FROM sysmaps_elements se'.
+				' WHERE '.DBcondition('se.elementid',$sysmapids).
+					' AND se.elementtype='.SYSMAP_ELEMENT_TYPE_MAP;
 		$db_elements = DBselect($sql);
 		while($db_element = DBfetch($db_elements)){
 			$selementids[$db_element['selementid']] = $db_element['selementid'];
@@ -673,7 +683,8 @@ COpt::memoryPick();
 
 		if(!empty($selementids)){
 			$sysmap_linkids = array();
-			$sql = 'SELECT linkid FROM sysmaps_links '.
+			$sql = 'SELECT linkid '.
+					' FROM sysmaps_links '.
 					' WHERE '.DBcondition('selementid1',$selementids).
 						' OR '.DBcondition('selementid2',$selementids);
 
@@ -714,12 +725,6 @@ COpt::memoryPick();
 /**
  * addLinks Map
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $links
  * @param array $links[0,...]['sysmapid']
  * @param array $links[0,...]['selementid1']
@@ -754,7 +759,7 @@ COpt::memoryPick();
 				break;
 			}
 
-			$linkid = add_link($link['sysmapid'], $link['label'], $link['selementid1'], $link['selementid2'], array(), $link['drawtype'], $link['color']);
+			$linkid = add_link($link);
 			if(!$linkid){
 				$result = false;
 				break;
@@ -776,12 +781,6 @@ COpt::memoryPick();
 /**
  * Add Element to Sysmap
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $elements[0,...]['sysmapid']
  * @param array $elements[0,...]['elementid']
  * @param array $elements[0,...]['elementtype']
@@ -797,94 +796,249 @@ COpt::memoryPick();
  */
 	public static function addElements($selements){
 		$errors = array();
-		$result_selements = array();
+		$selementids = array();
+		$selements = zbx_toArray($selements);
+
+		$sysmapids = zbx_objectValues($selements, 'sysmapid');
+
+		try{
+			self::BeginTransaction(__METHOD__);
+
+			$options = array(
+				'sysmapids' => $sysmapids,
+				'editable' => 1,
+				'preservekeys' => 1
+			);
+			$upd_maps = self::get($options);
+
+			foreach($selements as $snumm => $selement){
+				if(!isset($upd_maps[$selement['sysmapid']])){
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_NO_PERMISSIONS);
+				}
+			}
+
+			foreach($selements as $snumm => $selement){
+
+				$selement_db_fields = array(
+					'sysmapid' => null,
+					'elementid' => null,
+					'elementtype' => null,
+					'label' => 3,
+					'x' => 50,
+					'y' => 50,
+					'iconid_off' => 15,
+					'iconid_unknown' => 15,
+					'iconid_on' => 15,
+					'iconid_disabled' => 15,
+					'url' => '',
+					'label_location' => 0
+				);
+
+				if(!check_db_fields($selement_db_fields, $selement)){
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Wrong fields for element');
+				}
+
+				if(check_circle_elements_link($selement['sysmapid'],$selement['elementid'],$selement['elementtype'])){
+					self::exception(S_CIRCULAR_LINK_CANNOT_BE_CREATED.' "'.$selement['label'].'"');
+				}
+
+				$selementid = get_dbid('sysmaps_elements','selementid');
+				$selementids[] = $selementid;
+
+				$values = array(
+					'selementid' => $selementid,
+					'sysmapid' => $selement['sysmapid'],
+					'elementid' => $selement['elementid'],
+					'elementtype' => $selement['elementtype'],
+					'label' => zbx_dbstr($selement['label']),
+					'label_location' => $selement['label_location'],
+					'iconid_off' => $selement['iconid_off'],
+					'iconid_on' => $selement['iconid_on'],
+					'iconid_unknown' => $selement['iconid_unknown'],
+					'iconid_maintenance' => $selement['iconid_maintenance'],
+					'iconid_disabled' => $selement['iconid_disabled'],
+					'x' => $selement['x'],
+					'y' => $selement['y'],
+					'url' => zbx_dbstr($selement['url'])
+				);
+
+				$result = DBexecute('INSERT INTO sysmaps_elements ('.implode(',', array_keys($values)).')'.
+								' VALUES ('.implode(',', array_values($values)).')');
+
+				if(!$result) self::exception(ZBX_API_ERROR_INTERNAL, 'Map add elements failed');
+			}
+
+			$result = self::EndTransaction($result, __METHOD__);
+
+			return $selementids;
+		}
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
+
+			$errors = $e->getErrors();
+			$error = reset($errors);
+
+			self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, $error);
+			return false;
+		}
+	}
+
+
+/**
+ * Update Element to Sysmap
+ *
+ * @param array $elements[0,...]['selementid']
+ * @param array $elements[0,...]['sysmapid']
+ * @param array $elements[0,...]['elementid']
+ * @param array $elements[0,...]['elementtype']
+ * @param array $elements[0,...]['label']
+ * @param array $elements[0,...]['x']
+ * @param array $elements[0,...]['y']
+ * @param array $elements[0,...]['iconid_off']
+ * @param array $elements[0,...]['iconid_unknown']
+ * @param array $elements[0,...]['iconid_on']
+ * @param array $elements[0,...]['iconid_disabled']
+ * @param array $elements[0,...]['url']
+ * @param array $elements[0,...]['label_location']
+ */
+	public static function updateElements($selements){
 		$result = true;
 
-		$elements = zbx_toArray($selements);
+		$selements = zbx_toArray($selements);
+		$selementids = array();
 
-		self::BeginTransaction(__METHOD__);
-		foreach($selements as $snumm => $selement){
+		$sysmapids = zbx_objectValues($selements, 'sysmapid');
 
-			$selement_db_fields = array(
-				'sysmapid' => null,
-				'elementid' => null,
-				'elementtype' => null,
-				'label' => 3,
-				'x' => 50,
-				'y' => 50,
-				'iconid_off' => 15,
-				'iconid_unknown' => 15,
-				'iconid_on' => 15,
-				'iconid_disabled' => 15,
-				'url' => '',
-				'label_location' => 0
+		try{
+			self::BeginTransaction(__METHOD__);
+
+			$options = array(
+				'sysmapids' => $sysmapids,
+				'editable' => 1,
+				'preservekeys' => 1
 			);
+			$upd_maps = self::get($options);
 
-			if(!check_db_fields($element_db_fields, $element)){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Wrong fields for element');
-				break;
+			foreach($selements as $snumm => $selement){
+				if(!isset($upd_maps[$selement['sysmapid']])){
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_NO_PERMISSIONS);
+				}
 			}
 
-			$selementid = add_element_to_sysmap($selement);
-			if(!$selementid){
-				$result = false;
-				break;
+			foreach($selements as $snumm => $selement){
+
+				$selement_db_fields = array(
+					'sysmapid' => null,
+					'selementid' => null,
+					'elementid' => 0,
+					'elementtype' => 5,
+					'label' => '',
+					'label_location' => 0,
+					'iconid_off' => null,
+					'iconid_on' => 0,
+					'iconid_unknown' => 0,
+					'iconid_maintenance' => 0,
+					'iconid_disabled' => 0,
+					'x' => 50,
+					'y' => 50,
+					'url' => ''
+				);
+
+				if(!check_db_fields($selement_db_fields, $selement)){
+					$result = false;
+					$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Wrong fields for element');
+					break;
+				}
+
+				if(check_circle_elements_link($selement['sysmapid'],$selement['elementid'],$selement['elementtype'])){
+					throw new Exception(S_CIRCULAR_LINK_CANNOT_BE_CREATED.' "'.$selement['label'].'"');
+					return false;
+				}
+
+				$result = DBexecute('UPDATE sysmaps_elements '.
+						'SET elementid='.$selement['elementid'].', '.
+							' elementtype='.$selement['elementtype'].', '.
+							' label='.zbx_dbstr($selement['label']).', '.
+							' label_location='.$selement['label_location'].', '.
+							' x='.$selement['x'].', '.
+							' y='.$selement['y'].', '.
+							' iconid_off='.$selement['iconid_off'].', '.
+							' iconid_on='.$selement['iconid_on'].', '.
+							' iconid_unknown='.$selement['iconid_unknown'].', '.
+							' iconid_maintenance='.$selement['iconid_maintenance'].', '.
+							' iconid_disabled='.$selement['iconid_disabled'].', '.
+							' url='.zbx_dbstr($selement['url']).
+						' WHERE selementid='.$selement['selementid']);
+
+				if(!$result) self::exception(ZBX_API_ERROR_INTERNAL, 'Map update elements failed');
+
+				$selementids[] = $selement['selementid'];
 			}
 
-			$new_selement = array('selementid' => $selementid);
-			$result_elements[] = array_merge($new_selement, $selement);
+			$result = self::EndTransaction($result, __METHOD__);
+			return $selementids;
 		}
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
 
-		$result = self::EndTransaction($result, __METHOD__);
+			$errors = $e->getErrors();
+			$error = reset($errors);
 
-		if($result)
-			return $result_elements;
-		else{
-			self::setMethodErrors(__METHOD__, $errors);
+			self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, $error);
 			return false;
 		}
 	}
 
 /**
- * Gets the selementid from the hostid (getSeIDFromEID).
+ * Delete Element from map
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
- * @param _array $element_data
- * @param string $element_data[0,...]['sysmapid']
- * @param string $element_data[0,...]['elementid']
- * @return array|boolean selementid as array or false if error
- *
-	public static function getSeId($data){
+ * @param array $selements multidimensional array with selement objects
+ * @param array $selements[0, ...]['selementid'] selementid to delete
+ */
+    public static function deleteElements($selements){
+		$result = true;
 
-		$element = $selement_data['elementid'];
-		$sysmapid = $selement_data['sysmapid'];
-		$sql = 'select selementid from sysmaps_elements where elementid='.$element.' and sysmapid='.$sysmapid;
-		$map = DBfetch(DBselect($sql));
+        $selements = zbx_toArray($selements);
+        $selementids = zbx_objectValues($selements, 'selementid');
 
-		$result = $map ? true : false;
-		if($result)
-			return $map;
-		else{
-			self::$error[] = array('error' => ZBX_API_ERROR_INTERNAL, 'data' => $error);//'Internal zabbix error');
+		$sysmapids = zbx_objectValues($selements, 'sysmapid');
+
+		try{
+			self::BeginTransaction(__METHOD__);
+
+			$options = array(
+				'sysmapids' => $sysmapids,
+				'editable' => 1,
+				'preservekeys' => 1
+			);
+			$upd_maps = self::get($options);
+
+			foreach($selements as $snumm => $selement){
+				if(!isset($upd_maps[$selement['sysmapid']])){
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_NO_PERMISSIONS);
+				}
+			}
+
+	        $result = delete_sysmaps_element($selementids);
+		    $result = self::EndTransaction($result, __METHOD__);
+
+			if(!$result) self::exception(ZBX_API_ERROR_INTERNAL, 'Map delete elements failed');
+
+			return $selementids;
+		}
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
+
+			$errors = $e->getErrors();
+			$error = reset($errors);
+
+			self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, $error);
 			return false;
 		}
-	}
-//*/
+    }
 
 /**
  * Add link trigger to link (Sysmap)
- *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
  *
  * @param array $links[0,...]['linkid']
  * @param array $links[0,...]['triggerid']

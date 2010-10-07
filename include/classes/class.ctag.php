@@ -48,7 +48,7 @@ class CTag extends CObject{
 		$this->tag_start = $this->tag_end = $this->tag_body_start = $this->tag_body_end = '';
 
 		if(is_null($body)){
-			$this->tag_end = $this->tag_body_start = "\n";
+			$this->tag_end = $this->tag_body_start = '';
 		}
 		else{
 			CTag::addItem($body);
@@ -61,18 +61,21 @@ class CTag extends CObject{
 	public function showBody(){	echo $this->bodyToString();	}
 	public function showEnd(){		echo $this->endToString();	}
 
+// Do not put new line symbol(\n) before of after html tags,
+// it adds spaces in unwanted places
 	public function startToString(){
 		$res = $this->tag_start.'<'.$this->tagname;
 		foreach($this->attributes as $key => $value){
 			$res .= ' '.$key.'="'.$value.'"';
 		}
-		$res .= ($this->paired==='yes')?'>':' />';
+		$res .= ($this->paired==='yes')? '>':' />';
+
 	return $res;
 	}
 
 	public function bodyToString(){
 		$res = $this->tag_body_start;
-	return $res.parent::ToString(false);
+	return $res.parent::toString(false);
 
 		/*foreach($this->items as $item)
 			$res .= $item;

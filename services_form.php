@@ -90,7 +90,7 @@ include_once('include/page_header.php');
 //----------------------------------------------------------------------
 
 	$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,PERM_READ_ONLY,PERM_RES_IDS_ARRAY);
-	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array(), PERM_RES_IDS_ARRAY);
+	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array());
 
 	if(isset($_REQUEST['serviceid']) && $_REQUEST['serviceid'] > 0){
 		$sql = 'SELECT s.* '.
@@ -569,18 +569,18 @@ if(isset($_REQUEST['sform'])){
 		switch($val['type']){
 			case SERVICE_TIME_TYPE_UPTIME:
 				$type = new CSpan(S_UPTIME,'enabled');
-				$from = date('l H:i', $val['from']);
-				$to = date('l H:i', $val['to']);
+				$from = zbx_date2str(S_SERVICES_UPTIME_DATE_FORMAT, $val['from']);
+				$to = zbx_date2str(S_SERVICES_UPTIME_DATE_FORMAT, $val['to']);
 				break;
 			case SERVICE_TIME_TYPE_DOWNTIME:
 				$type = new CSpan(S_DOWNTIME,'disabled');
-				$from = date('l H:i', $val['from']);
-				$to = date('l H:i', $val['to']);
+				$from = zbx_date2str(S_SERVICES_DOWNTIME_DATE_FORMAT, $val['from']);
+				$to = zbx_date2str(S_SERVICES_DOWNTIME_DATE_FORMAT, $val['to']);
 				break;
 			case SERVICE_TIME_TYPE_ONETIME_DOWNTIME:
 				$type = new CSpan(S_ONE_TIME_DOWNTIME,'disabled');
-				$from = date('d M Y H:i', $val['from']);
-				$to = date('d M Y H:i', $val['to']);
+				$from = zbx_date2str(S_SERVICES_ONETIME_DOWNTIME_DATE_FORMAT, $val['from']);
+				$to = zbx_date2str(S_SERVICES_ONETIME_DOWNTIME_DATE_FORMAT, $val['to']);
 				break;
 		}
 		array_push($stime_el, array(new CCheckBox('rem_service_times[]', 'no', null,$i),
@@ -621,11 +621,12 @@ if(isset($_REQUEST['sform'])){
 
 
 
-		$script = new CJSscript("javascript: if(CLNDR['downtime_since'].clndr.setSDateFromOuterObj()){".
-								"$('new_service_time[from]').value = parseInt(CLNDR['downtime_since'].clndr.sdt.getTime()/1000);}".
-							"if(CLNDR['downtime_till'].clndr.setSDateFromOuterObj()){".
-								"$('new_service_time[to]').value = parseInt(CLNDR['downtime_till'].clndr.sdt.getTime()/1000);}"
-							);
+		$script = "javascript: ".
+						"if(CLNDR['downtime_since'].clndr.setSDateFromOuterObj()){".
+							"$('new_service_time[from]').value = parseInt(CLNDR['downtime_since'].clndr.sdt.getTime()/1000);}".
+						"if(CLNDR['downtime_till'].clndr.setSDateFromOuterObj()){".
+							"$('new_service_time[to]').value = parseInt(CLNDR['downtime_till'].clndr.sdt.getTime()/1000);}"
+						;
 		$frmService->addAction('onsubmit',$script);
 		$frmService->addVar('new_service_time[from]','');
 		$frmService->addVar('new_service_time[to]','');
@@ -715,7 +716,7 @@ if(isset($_REQUEST['sform'])){
 	$frmService->addRow(S_NEW_SERVICE_TIME, array(
 			$cmbTimeType, BR(),
 			$time_param,
-			new CButton('add_service_time','add','javascript: document.forms[0].action += \'?sform=1\'; submit();')
+			new CButton('add_service_time',S_ADD_SMALL,'javascript: document.forms[0].action += \'?sform=1\'; submit();')
 		));
 //trigger
 	$frmService->addRow(S_LINK_TO_TRIGGER_Q, new CCheckBox('linktrigger',$linktrigger,"javascript: display_element('trigger_name');",1));

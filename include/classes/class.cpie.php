@@ -30,26 +30,11 @@ class CPie extends CGraphDraw{
 		$this->exploderad3d = 3;
 		$this->graphheight3d = 12;
 		$this->shiftlegendright = 17*7 + 7 + 10; // count of static chars * px/char + for color rectangle + space
-		$this->drawlegendallow = 1;
 	}
 
 /********************************************************************************************************/
 // PRE CONFIG:	ADD / SET / APPLY
 /********************************************************************************************************/
-
-	public function switchlegend($type=false){
-		if($type && is_numeric($type)){
-			$this->drawlegendallow = $type;
-			return $this->drawlegendallow;
-		}
-		else if($this->drawlegendallow == 0){
-			$this->drawlegendallow = 1;
-		}
-		else {
-			$this->drawlegendallow = 0;
-		}
-	return $this->drawlegendallow;
-	}
 
 	public function addItem($itemid, $calc_fnc=CALC_FNC_AVG,$color=null, $type=null, $periods_cnt=null){
 
@@ -324,7 +309,7 @@ class CPie extends CGraphDraw{
 
 //			convert_units($datavalue,$this->items[$i]["units"]),
 			if(isset($data) && isset($datavalue)){
-				$strvalue = sprintf(S_VALUE.': %s ('.((round($proc)!=$proc)?'%0.2f':'%s')."%s)",convert_units($datavalue,$this->items[$i]["units"]),$proc,'%');
+				$strvalue = sprintf(S_VALUE.': %s ('.(round($proc)!=$proc? '%0.2f':'%s').'%%)',convert_units($datavalue,$this->items[$i]['units']),$proc);
 
 				$str = sprintf('%s: %s [%s] ',
 						str_pad($this->items[$i]['host'],$max_host_len,' '),
@@ -333,7 +318,7 @@ class CPie extends CGraphDraw{
 			}
 			else{
 				$strvalue = sprintf(S_VALUE.': '.S_NO_DATA_SMALL);
-				$str=sprintf('%s: %s [ '.S_NO_DATA_SMALL.' ]',
+				$str = sprintf('%s: %s [ '.S_NO_DATA_SMALL.' ]',
 					str_pad($this->items[$i]['host'],$max_host_len,' '),
 					str_pad($this->items[$i]['description'],$max_desc_len,' '));
 			}
@@ -341,7 +326,7 @@ class CPie extends CGraphDraw{
 
 			imagefilledrectangle($this->im,
 							$this->shiftXleft,
-							$this->sizeY+$shiftY+14*$i -5,
+							$this->sizeY+$shiftY+14*$i - 5,
 							$this->shiftXleft+10,
 							$this->sizeY+$shiftY+5+14*$i,
 							$color);
@@ -365,7 +350,7 @@ class CPie extends CGraphDraw{
 					);
 
 
-			$shiftX = $this->fullSizeX - $this->shiftlegendright - $this->shiftXright + 10;
+			$shiftX = $this->fullSizeX - $this->shiftlegendright - $this->shiftXright + 25;
 	//		SDI($shiftX.','.$this->sizeX);
 
 			imagefilledrectangle($this->im,
@@ -550,15 +535,15 @@ class CPie extends CGraphDraw{
 
 		$this->shiftY = 30;
 		$this->shiftYLegend = 20;
-		$this->shiftXleft = 30;
+		$this->shiftXleft = 10;
 		$this->shiftXright = 0;
 
 		$this->fullSizeX = $this->sizeX;
 		$this->fullSizeY = $this->sizeY;
 
-		if(($this->sizeX < 300) || ($this->sizeY < 200)) $this->switchlegend(0);
+		if(($this->sizeX < 300) || ($this->sizeY < 200)) $this->showLegend(0);
 
-		if($this->drawlegendallow == 1){
+		if($this->drawLegend == 1){
 			$this->sizeX -= ($this->shiftXleft+$this->shiftXright+$this->shiftlegendright);
 			$this->sizeY -= ($this->shiftY+$this->shiftYLegend+12*$this->num+8);
 		}
@@ -639,9 +624,9 @@ class CPie extends CGraphDraw{
 		}
 
 		$this->drawLogo();
-		if($this->drawlegendallow == 1)	$this->drawLegend();
+		if($this->drawLegend == 1)	$this->drawLegend();
 
-		$str=sprintf("%0.2f",(getmicrotime()-$start_time));
+		$str=sprintf('%0.2f',(getmicrotime()-$start_time));
 		imagestring($this->im, 0,$this->fullSizeX-210,$this->fullSizeY-12,'Data from '.$this->dataFrom.'. Generated in '.$str.' sec', $this->getColor('Gray'));
 
 		unset($this->items, $this->data);

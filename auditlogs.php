@@ -27,7 +27,7 @@ require_once('include/users.inc.php');
 	$page['title'] = 'S_AUDIT';
 	$page['file'] = 'auditlogs.php';
 	$page['hist_arg'] = array();
-	$page['scripts'] = array('class.calendar.js','scriptaculous.js?load=effects,dragdrop','gtlc.js');
+	$page['scripts'] = array('class.calendar.js','effects.js','dragdrop.js','gtlc.js');
 
 	$page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
@@ -45,7 +45,7 @@ include_once('include/page_header.php');
 		'filter_rst'=>		array(T_ZBX_INT, O_OPT,	P_SYS,	IN(array(0,1)),	NULL),
 		'filter_set'=>		array(T_ZBX_STR, O_OPT,	P_SYS,	null,	NULL),
 		'alias' =>			array(T_ZBX_STR, O_OPT,	P_SYS,	null,	NULL),
-		
+
 		'period'=>	array(T_ZBX_INT, O_OPT,	 null,	null, null),
 		'dec'=>		array(T_ZBX_INT, O_OPT,	 null,	null, null),
 		'inc'=>		array(T_ZBX_INT, O_OPT,	 null,	null, null),
@@ -54,7 +54,7 @@ include_once('include/page_header.php');
 		'stime'=>	array(T_ZBX_STR, O_OPT,	 null,	null, null),
 //ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			NULL),
-		'favid'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj}) && ("filter"=={favobj})'),
 	);
 
@@ -111,7 +111,7 @@ include_once('include/page_header.php');
 	$numrows = new CDiv();
 	$numrows->setAttribute('name', 'numrows');
 
-	$audit_wdgt->addHeader(S_ACTIONS_BIG);
+	$audit_wdgt->addHeader(S_LOGS_BIG);
 	$audit_wdgt->addHeader($numrows);
 //--------
 
@@ -187,7 +187,7 @@ include_once('include/page_header.php');
 	$filterForm->addItemToBottomRow($reset);
 
 	$audit_wdgt->addFlicker($filterForm, CProfile::get('web.auditlogs.filter.state',1));
-	
+
 	$scroll_div = new CDiv();
 	$scroll_div->setAttribute('id','scrollbar_cntr');
 	$audit_wdgt->addFlicker($scroll_div, CProfile::get('web.auditlogs.filter.state',1));
@@ -195,10 +195,10 @@ include_once('include/page_header.php');
 
 	$effectiveperiod = navigation_bar_calc('web.auditlogs.timeline', 0, true);
 	$bstime = $_REQUEST['stime'];
-	$from = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
+	$from = zbxDateToTime($_REQUEST['stime']);
 	$till = $from + $effectiveperiod;
-	
-	
+
+
 	$sql_cond = array();
 	if($_REQUEST['alias'])
 		$sql_cond['alias'] = ' AND u.alias='.zbx_dbstr($_REQUEST['alias']);
@@ -233,11 +233,11 @@ include_once('include/page_header.php');
 				' AND '.DBin_node('u.userid', get_current_nodeid(null, PERM_READ_ONLY)).
 			' ORDER BY a.clock DESC';
 	$result = DBselect($sql, ($config['search_limit']+1));
-	
+
 // get first log for timeline starttime
 	unset($sql_cond['from']);
 	unset($sql_cond['till']);
-	
+
 	$sql = 'SELECT a.auditid, a.clock'.
 			' FROM auditlog a, users u '.
 			' WHERE u.userid=a.userid '.
@@ -246,7 +246,7 @@ include_once('include/page_header.php');
 			' ORDER BY a.clock ASC';
 	$firstAudit = DBfetch(DBselect($sql, ($config['search_limit']+1)));
 	$starttime = $firstAudit['clock'];
-	
+
 	while($row = DBfetch($result)){
 		switch($row['action']){
 			case AUDIT_ACTION_ADD:		$action = S_ADDED; break;
@@ -289,7 +289,7 @@ include_once('include/page_header.php');
 		}
 
 		$table->addRow(array(
-			date(S_DATE_FORMAT_YMDHMS,$row['clock']),
+			zbx_date2str(S_AUDITLOGS_RECORD_DATE_FORMAT,$row['clock']),
 			$row['alias'],
 			$row['ip'],
 			$row['resourcetype'],
@@ -310,14 +310,12 @@ include_once('include/page_header.php');
 // NAV BAR
 	$timeline = array(
 		'period' => $effectiveperiod,
-		'starttime' => $starttime,
+		'starttime' => date('YmdHis', $starttime),
 		'usertime' => null
 	);
 
 	if(isset($_REQUEST['stime'])){
-		$bstime = $_REQUEST['stime'];
-		$timeline['usertime'] = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
-		$timeline['usertime'] += $timeline['period'];
+		$timeline['usertime'] = date('YmdHis', zbxDateToTime($_REQUEST['stime']) + $timeline['period']);
 	}
 
 	$dom_graph_id = 'events';

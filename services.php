@@ -42,7 +42,7 @@ include_once('include/page_header.php');
 
 // ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	IN("'hat'"),		NULL),
-		'favid'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,	'isset({favobj})'),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,	'isset({favobj})'),
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,	NOT_EMPTY,	'isset({favobj})'),
 
 	);
@@ -52,7 +52,7 @@ include_once('include/page_header.php');
 /* AJAX */
 	if(isset($_REQUEST['favobj'])){
 		if('hat' == $_REQUEST['favobj']){
-			CProfile::update('web.services.hats.'.$_REQUEST['favid'].'.state',$_REQUEST['state'],PROFILE_TYPE_INT);
+			CProfile::update('web.services.hats.'.$_REQUEST['favref'].'.state',$_REQUEST['state'],PROFILE_TYPE_INT);
 		}
 	}
 
@@ -64,7 +64,7 @@ include_once('include/page_header.php');
 
 //--------------------------------------------------------------------------
 
-	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array(), PERM_RES_IDS_ARRAY);
+	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array());
 
 
 	$sql = 'SELECT DISTINCT s.serviceid, sl.servicedownid, sl_p.serviceupid as serviceupid, s.triggerid, '.
@@ -129,7 +129,10 @@ include_once('include/page_header.php');
 
 	//show_table_header(S_IT_SERVICES_BIG);
 
-	$tree = new CTree('service_conf_tree', $treeServ,array('caption' => bold(S_SERVICE),'algorithm' => bold(S_STATUS_CALCULATION), 'description' => bold(S_TRIGGER)));
+	$tree = new CTree('service_conf_tree', $treeServ,array(
+		'caption' => S_SERVICE,
+		'algorithm' => S_STATUS_CALCULATION,
+		'description' => S_TRIGGER));
 
 	if($tree){
 		$serv_wdgt = new CWidget();

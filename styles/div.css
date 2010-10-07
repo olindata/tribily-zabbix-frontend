@@ -67,6 +67,68 @@ div.hintbox {
 
 /************** END OF HINT BOX ************/
 
+/* Node Tree */
+div #div_node_tree {
+	background-color: gray;
+	position: absolute;
+	border: 2px solid black;
+	right: 0px;
+	z-index: 200;
+}
+
+/* SEARCH Suggest */
+div.suggest{
+	position: absolute;
+	border: 1px #5C7099 solid;
+	width: 162px;
+	z-index: 100;
+	display: none;
+}
+
+div.thin_header{
+	width: 100%;
+	color: #FFFFFF;
+	background: #5C7099 url('../images/gradients/table_head2.gif') repeat-x top left;
+	border: 0px #000000 solid;
+	text-align: center;
+}
+
+/* <FORM ELEMENT> */
+div.formElement_header{
+	color: #FFFFFF;
+	background: #5C7099 url('../images/gradients/table_head2.gif') repeat-x top left;
+	border: 0;
+	text-align: left;
+	height: 20px;
+	padding-left: 5px;
+	line-height: 20px;
+}
+
+div.formElement_body{
+	border: 1px solid #AAAAAA;
+	background-color: #E5E5E5;
+}
+
+.formElementTable{
+	white-space: nowrap;
+}
+
+.formElementTable tr td{
+	padding-left: 5px;
+	padding-right: 5px;
+	height: 24px;
+}
+
+div.formElement_footer{
+	color: #FFFFFF;
+	background: #5C7099 url('../images/gradients/table_head2.gif') repeat-x top left;
+	border: 0;
+	text-align: right;
+	height: 20px;
+	padding-right: 5px;
+}
+/* </FORM ELEMENT> */
+
 /**** SCREEN DRAG & DROP ****/
 div.draggable {
 	cursor: pointer;
@@ -85,134 +147,66 @@ div.zabbix_logo{
 	cursor: pointer;
 }
 
+div.menu_icon{
+	background-repeat:no-repeat;
+	height: 16px;
+	width: 16px;
+	cursor: pointer;
+	border: 1px solid white;
+	-webkit-border-radius: 2px;
+	-moz-border-radius: 2px;
+	-o-border-radius: 2px;
+	border-radius: 2px;
+}
+div.menu_icon:hover{
+	-webkit-box-shadow: 0 0 6px white;
+	-moz-box-shadow: 0 0 6px white;
+	box-shadow: 0 0 6px white;
+}
+
 div.iconminus{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/minus.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-div.iconminus:hover{
-}
-
 div.iconplus{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/plus.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-div.iconplus:hover{
-}
-
 div.iconmenu{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/menu.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.iconmenu:hover{
+div.iconmenu_b{
+	background-image: url('../images/general/bttn/menu.png');
+	background-color: #5572AA;
 }
-
 div.arrowup{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/arrowup.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.arrowup:hover{
-}
-
 div.arrowdown{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/arrowdown.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.arrowdown:hover{
-}
-
 div.arrowleft{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/arrowleft.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.arrowleft:hover{
-}
-
 div.arrowright{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/arrowright.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.arrowright:hover{
-}
-
 div.fullscreen{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/fullscreen.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.fullscreen:hover{
-}
-
 div.iconhelp{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/help.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.iconhelp:hover{
-}
-
 div.iconconfig{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/config.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.iconconfig:hover{
-}
-
 div.iconconfig_hl{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/config_hl.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.iconconfig_hl:hover{
-}
-
 div.filterclosed{
 	height: 9px;
 	width: 9px;
 	background-image: url('../images/general/closed.gif');
 	background-repeat:no-repeat;
 	cursor:pointer;
-}
-
-div.filterclosed:hover{
 }
 
 div.filteropened{
@@ -223,41 +217,26 @@ div.filteropened{
 	cursor:pointer;
 }
 
-div.filteropened:hover{
-}
-
 div.iconsound{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/sound.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.iconsound:hover{
-}
-
 div.iconmute{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/mute.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
 }
-
-div.iconmute:hover{
-}
-
 div.iconreset{
-	height: 18px;
-	width: 18px;
 	background-image: url('../images/general/bttn/reset.png');
-	background-repeat:no-repeat;
-	cursor:pointer;
+}
+div.iconsnooze{
+	background-image: url('../images/general/bttn/snooze.png');
+}
+div.iconclose{
+	background-image: url('../images/general/bttn/close.png');
+}
+div.iconmove{
+	background-image: url('../images/general/bttn/move.png');
+	cursor: move;
 }
 
-div.iconreset:hover{
-}
 
 div.iconerror{
 	height: 14px;
@@ -266,10 +245,6 @@ div.iconerror{
 	background-repeat:no-repeat;
 	cursor:pointer;
 }
-
-div.iconerror:hover{
-}
-
 div.iconok{
 	height: 14px;
 	width: 14px;
@@ -277,98 +252,72 @@ div.iconok{
 	background-repeat:no-repeat;
 }
 
-div.iconok:hover{
-}
-
+/* <status icons> */
 div.iconzbxunknown{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/zabbix_unknown.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconzbxunknown:hover{
-}
-
 div.iconzbxavailable{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/zabbix_available.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconzbxavailable:hover{
-}
-
 div.iconzbxunavailable{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/zabbix_unavailable.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconzbxunavailable:hover{
-}
-
 div.iconsnmpunknown{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/snmp_unknown.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconsnmpunknown:hover{
-}
-
 div.iconsnmpavailable{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/snmp_available.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconsnmpavailable:hover{
-}
-
 div.iconsnmpunavailable{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/snmp_unavailable.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconsnmpunavailable:hover{
-}
-
 div.iconipmiunknown{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/ipmi_unknown.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconipmiunknown:hover{
-}
-
 div.iconipmiavailable{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/ipmi_available.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
-
-div.iconipmiavailable:hover{
-}
-
 div.iconipmiunavailable{
 	height: 14px;
 	width: 14px;
 	background-image: url('../images/general/ipmi_unavailable.png');
 	background-repeat:no-repeat;
+	margin: 0 1px;
 }
+/* </status icons> */
 
-div.iconipmiunavailable:hover{
-}
 
 div.dbl_arrow_down{
 	height: 10px;
@@ -378,10 +327,6 @@ div.dbl_arrow_down{
 	display:block;
 	cursor:pointer;
 }
-
-div.dbl_arrow_down:hover{
-}
-
 div.dbl_arrow_up{
 	height: 10px;
 	width: 9px;
@@ -390,15 +335,11 @@ div.dbl_arrow_up{
 	cursor:pointer;
 }
 
-div.dbl_arrow_up:hover{
-}
-
 div.sla_green{
 	height: 15px;
 	background-image: url('../images/gradients/sla_green15.png');
 	background-repeat:repeat-x;
 }
-
 div.sla_red{
 	height: 15px;
 	background-image: url('../images/gradients/sla_red15.png');
@@ -406,17 +347,16 @@ div.sla_red{
 }
 
 div.icon_sortup{
-	height: 10px;
-	width: 10px;
-	background-image: url('../images/general/sort_up.png');
+	height: 16px;
+	width: 19px;
+	background-image: url('../images/general/sort_up.gif');
 	background-repeat:no-repeat;
 	cursor: pointer;
 }
-
 div.icon_sortdown{
-	height: 10px;
-	width: 10px;
-	background-image: url('../images/general/sort_down.png');
+	height: 16px;
+	width: 19px;
+	background-image: url('../images/general/sort_down.gif');
 	background-repeat:no-repeat;
 	cursor: pointer;
 }
@@ -453,6 +393,16 @@ div.icon_sortdown{
 
 .blacklink:hover{
 	color:#3A3A3A;
+}
+
+.whitelink{
+	color:#F3F3F3;
+	cursor: pointer;
+	text-decoration: underline;
+}
+
+.whitelink:hover{
+	color:#DADADA;
 }
 
 .link_menu{
@@ -563,14 +513,4 @@ span.info{
 .biglink:hover{
 	color:#6C80B9;
 	text-decoration: underline;
-}
-
-/*********** Node Tree ****************/
-
-div #div_node_tree {
-	background-color: gray;
-	position: absolute;
-	border: 2px solid black;
-	right: 0px;
-	z-index: 200;
 }

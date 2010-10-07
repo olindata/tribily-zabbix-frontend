@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2005 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@ require_once('include/config.inc.php');
 require_once('include/graphs.inc.php');
 
 $page['file']	= 'chart2.php';
-$page['title']	= 'S_CHART';
+// $page['title']	= 'S_CHART';
 $page['type']	= PAGE_TYPE_IMAGE;
 
 include_once('include/page_header.php');
@@ -48,19 +48,19 @@ include_once('include/page_header.php');
 	}
 
 	$options = array(
+		'nodeids' => get_current_nodeid(true),
 		'graphids' => $_REQUEST['graphid'],
-		'extendoutput' => 1,
-		'nodeids' => get_current_nodeid(true)
+		'output' => API_OUTPUT_EXTEND
 	);
 	$db_data = CGraph::get($options);
 	if(empty($db_data)) access_deny();
 	else $db_data = reset($db_data);
 
 	$options = array(
-			'graphids' => $_REQUEST['graphid'],
-			'extendoutput' => 1,
-			'nodeids' => get_current_nodeid(true)
-		);
+		'nodeids' => get_current_nodeid(true),
+		'graphids' => $_REQUEST['graphid'],
+		'output' => API_OUTPUT_EXTEND
+	);
 	$host = CHost::get($options);
 	$host = reset($host);
 
@@ -89,12 +89,12 @@ include_once('include/page_header.php');
 	$height = get_request('height', 0);
 	if($height <= 0) $height = $db_data['height'];
 
+//	$graph->showLegend($db_data['show_legend']);
 	$graph->showWorkPeriod($db_data['show_work_period']);
 	$graph->showTriggers($db_data['show_triggers']);
 
 	$graph->setWidth($width);
 	$graph->setHeight($height);
-
 
 	$graph->setYMinAxisType($db_data['ymin_type']);
 	$graph->setYMaxAxisType($db_data['ymax_type']);
@@ -107,6 +107,7 @@ include_once('include/page_header.php');
 
 	$graph->setLeftPercentage($db_data['percent_left']);
 	$graph->setRightPercentage($db_data['percent_right']);
+
 
 	$sql = 'SELECT gi.* '.
 			' FROM graphs_items gi '.
@@ -122,7 +123,7 @@ include_once('include/page_header.php');
 			$db_data['drawtype'],
 			$db_data['type'],
 			$db_data['periods_cnt']
-			);
+		);
 	}
 
 	$graph->draw();

@@ -41,7 +41,7 @@ include_once('include/page_header.php');
 		'fullscreen'=>		array(T_ZBX_INT, O_OPT,	P_SYS,			IN('0,1'),	NULL),
 // ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	IN('"hat"'),		NULL),
-		'favid'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,	'isset({favobj})'),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,	'isset({favobj})'),
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,	NOT_EMPTY,	'isset({favobj})'),
 	);
 
@@ -50,7 +50,7 @@ include_once('include/page_header.php');
 /* AJAX */
 	if(isset($_REQUEST['favobj'])){
 		if('hat' == $_REQUEST['favobj']){
-			CProfile::update('web.srv_status.hats.'.$_REQUEST['favid'].'.state',$_REQUEST['state'],PROFILE_TYPE_INT);
+			CProfile::update('web.srv_status.hats.'.$_REQUEST['favref'].'.state',$_REQUEST['state'],PROFILE_TYPE_INT);
 		}
 	}
 
@@ -61,8 +61,7 @@ include_once('include/page_header.php');
 //--------
 ?>
 <?php
-	$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,PERM_READ_ONLY,PERM_RES_IDS_ARRAY);
-	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array(), PERM_RES_IDS_ARRAY);
+	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array());
 
 	if(isset($_REQUEST['serviceid'])){
 		$sql = 'SELECT DISTINCT serviceid, triggerid '.
@@ -198,7 +197,7 @@ include_once('include/page_header.php');
 				$stat = calculate_service_availability($row['serviceid'], $period_start, $period_end);
 
 				$p = min($stat['problem'], 20);
-				$sla_style = ($row['goodsla'] > $stat['ok'])?'on':'off';
+				$sla_style = ($row['goodsla'] > $stat['ok'])? 'on':'off';
 
 				$sizeX = 160;
 				$sizeY = 15;
@@ -221,7 +220,7 @@ include_once('include/page_header.php');
 					$chart2 = new CLink($chart2,'report3.php?serviceid='.$row['serviceid'].'&year='.date('Y'),'image');
 				}
 
-				$text = new CLink(sprintf("%.2f",$stat['problem']),'report3.php?serviceid='.$row['serviceid'].'&year='.date('Y'), $sla_style);
+				$text = new CLink(sprintf('%.2f',$stat['problem']),'report3.php?serviceid='.$row['serviceid'].'&year='.date('Y'), $sla_style);
 
 				$sla_tab->addRow(array($chart1, $chart2, SPACE, $text));
 
@@ -263,12 +262,12 @@ include_once('include/page_header.php');
 
 		$tree = new CTree('service_status_tree',
 							$treeServ,
-							array('caption' => bold(S_SERVICE),
-								'status' => bold(S_STATUS),
-								'reason' => bold(S_REASON),
-								'sla' => bold('SLA ('.$periods[$period].')'),
-								'sla2' => bold(nbsp(S_SLA)),
-								'graph' => bold(S_GRAPH))
+							array('caption' => S_SERVICE,
+								'status' => S_STATUS,
+								'reason' => S_REASON,
+								'sla' => 'SLA ('.$periods[$period].')',
+								'sla2' => nbsp(S_SLA),
+								'graph' => S_GRAPH)
 						);
 
 		if($tree){
@@ -285,16 +284,11 @@ include_once('include/page_header.php');
 
 			$r_form->addItem(array(S_PERIOD.SPACE, $period_combo));
 
-			$url = '?period='.$period.'&fullscreen='.($_REQUEST['fullscreen']?'0':'1');
-			$fs_icon = new CDiv(SPACE, 'fullscreen');
-			$fs_icon->setAttribute('title',$_REQUEST['fullscreen']?S_NORMAL.' '.S_VIEW:S_FULLSCREEN);
-			$fs_icon->addAction('onclick',new CJSscript("javascript: document.location = '".$url."';"));
+			$fs_icon = get_icon('fullscreen', array('fullscreen' => $_REQUEST['fullscreen']));
 
 			$srv_wdgt = new CWidget('hat_services', $tree->getHTML());
-
 			$srv_wdgt->addPageHeader(S_IT_SERVICES_BIG, $fs_icon);
 			$srv_wdgt->addHeader(S_IT_SERVICES_BIG, $r_form);
-
 			$srv_wdgt->show();
 		}
 		else {

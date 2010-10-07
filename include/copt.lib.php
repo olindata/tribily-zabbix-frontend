@@ -256,8 +256,6 @@ if(defined('USE_PROFILING')){
 			global $USER_DETAILS;
 			global $DB;
 
-
-
 			$endtime = COpt::getmicrotime();
 			$memory = COpt::getmemoryusage();
 			$pickMemory = COpt::getMemoryPick();
@@ -279,9 +277,9 @@ if(defined('USE_PROFILING')){
 
 			if(defined('USE_MEM_PROF')){
 				$debug_str.= S_MEMORY_LIMIT.'	: '.ini_get('memory_limit').OBR;
-				$debug_str.= S_MEMORY_USAGE.'	: '.mem2str($memorystamp[$type]).' - '.mem2str($memory).OBR;
-				$debug_str.= S_MEMORY_LEAK.'	: '.mem2str($memory - $memorystamp[$type]).OBR;
-				$debug_str.= 'Memory Pick	: '.mem2str($pickMemory).OBR;
+				$debug_str.= S_MEMORY_USAGE.'	: '.mem2str($memorystamp[$type]).' - '.mem2str($memory).
+						' ('.mem2str($memory - $memorystamp[$type]).')'.OBR;
+				$debug_str.= 'Memory peak	: '.mem2str($pickMemory).OBR;
 			}
 
 			if(defined('USE_VAR_MON')){
@@ -312,7 +310,9 @@ if(defined('USE_PROFILING')){
 
 					$sql_time=0;
 					for($i = $sqlmark[$type]; $i < $requests_cnt; $i++){
-						$time=$sqlrequests[$i][0];
+						$time = $sqlrequests[$i][0];
+						$sqlrequests[$i][1] = str_replace(array('<','>'), array('&lt;','&gt;'), $sqlrequests[$i][1]);
+
 						$sql_time+=$time;
 						if($time < LONG_QUERY){
 							$debug_str.= S_TIME.':'.round($time,8).' SQL:&nbsp;'.$sqlrequests[$i][1].OBR;
@@ -345,7 +345,7 @@ if(defined('USE_PROFILING')){
 			$debug->setAttribute('style','display: none; overflow: auto; width: 95%; border: 1px #777777 solid; margin: 4px; padding: 4px;');
 
 			if(self::$memory_limit_reached){
-				$debug->addItem(array(BR(),new CJSscript(S_MEMORY_LIMIT_REACHED),BR()));
+				$debug->addItem(array(BR(), S_MEMORY_LIMIT_REACHED,BR()));
 			}
 			foreach(self::$debug_info as $type => $info){
 				$debug->addItem(array(BR(),new CJSscript($info),BR()));

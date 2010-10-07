@@ -24,102 +24,6 @@ require_once('include/actions.inc.php');
 require_once('include/js.inc.php');
 ?>
 <?php
-	function screen_accessible($screenid,$perm){
-		global $USER_DETAILS;
-
-		$result = false;
-
-		if(DBfetch(DBselect('SELECT screenid FROM screens WHERE screenid='.$screenid.' AND '.DBin_node('screenid', get_current_nodeid($perm))))){
-			$result = true;
-
-			$db_result = DBselect('SELECT * FROM screens_items WHERE screenid='.$screenid);
-			while(($ac_data = DBfetch($db_result)) && $result){
-				if($ac_data['resourceid'] == 0) continue;
-
-				switch($ac_data['resourcetype']){
-					case SCREEN_RESOURCE_GRAPH:
-						if(!isset($graphids)){
-							$options = array();
-							$options['nodeids'] = get_current_nodeid(true);
-
-							if($perm == PERM_READ_WRITE) $options['editable'] = 1;
-							$graphids = CGraph::get($options);
-							$graphids = zbx_objectValues($graphids, 'graphid');
-							$graphids = zbx_toHash($graphids, 'graphid');
-						}
-
-						$result &= isset($graphids[$ac_data['resourceid']]);
-					break;
-					case SCREEN_RESOURCE_SIMPLE_GRAPH:
-						// break; /* use same processing as items */
-					case SCREEN_RESOURCE_PLAIN_TEXT:
-						if(!isset($itemid))
-							$itemid = $ac_data['resourceid'];
-
-						$options = array(
-							'countOutput' => 1,
-							'itemids' => $itemid,
-							'nodeids' => get_current_nodeid(true)
-						);
-
-						if($perm == PERM_READ_WRITE) $options['editable'] = 1;
-
-						$items = CItem::get($options);
-						if($items == 0) $result = false;
-
-						unset($itemid);
-						break;
-					case SCREEN_RESOURCE_MAP:
-						$result &= sysmap_accessible($ac_data['resourceid'], PERM_READ_ONLY);
-						break;
-					case SCREEN_RESOURCE_SCREEN:
-						$result &= screen_accessible($ac_data['resourceid'], PERM_READ_ONLY);
-						break;
-					case SCREEN_RESOURCE_SERVER_INFO:
-					case SCREEN_RESOURCE_HOSTS_INFO:
-					case SCREEN_RESOURCE_TRIGGERS_INFO:
-					case SCREEN_RESOURCE_TRIGGERS_OVERVIEW:
-					case SCREEN_RESOURCE_HOSTGROUP_TRIGGERS:
-					case SCREEN_RESOURCE_HOST_TRIGGERS:
-					case SCREEN_RESOURCE_DATA_OVERVIEW:
-					case SCREEN_RESOURCE_CLOCK:
-					case SCREEN_RESOURCE_URL:
-					case SCREEN_RESOURCE_ACTIONS:
-					case SCREEN_RESOURCE_EVENTS:
-						/* skip */
-						break;
-				}
-			}
-		}
-		return $result;
-	}
-
-/*
-	function add_screen($name,$hsize,$vsize){
-		$screenid=get_dbid("screens","screenid");
-		$sql='INSERT INTO screens (screenid,name,hsize,vsize) '.
-				" VALUES ($screenid,".zbx_dbstr($name).",$hsize,$vsize)";
-		$result=DBexecute($sql);
-
-		if(!$result)
-			return $result;
-
-	return $screenid;
-	}
-
-	function update_screen($screenid,$name,$hsize,$vsize){
-		$sql="update screens set name=".zbx_dbstr($name).",hsize=$hsize,vsize=$vsize where screenid=$screenid";
-	return  DBexecute($sql);
-	}
-*/
-	function delete_screen($screenid){
-		$result=DBexecute('DELETE FROM screens_items where screenid='.$screenid);
-		$result&=DBexecute('DELETE FROM screens_items where resourceid='.$screenid.' and resourcetype='.SCREEN_RESOURCE_SCREEN);
-		$result&=DBexecute('DELETE FROM slides where screenid='.$screenid);
-		$result&=DBexecute("DELETE FROM profiles WHERE idx='web.favorite.screenids' AND source='screenid' AND value_id=$screenid");
-		$result&=DBexecute('DELETE FROM screens where screenid='.$screenid);
-	return	$result;
-	}
 
 	function add_screen_item($resourcetype,$screenid,$x,$y,$resourceid,$width,$height,$colspan,$rowspan,$elements,$valign,$halign,$style,$url,$dynamic){
 		$sql='DELETE FROM screens_items WHERE screenid='.$screenid.' and x='.$x.' and y='.$y;
@@ -239,16 +143,24 @@ require_once('include/js.inc.php');
 		return DBfetch(DBselect('select * from slideshows where slideshowid='.$slideshowid));
 	}
 
-	function validate_slide(&$slide){
-		if(!screen_accessible($slide['screenid'], PERM_READ_ONLY)) return false;
-		if(!isset($slide['delay'])) $slide['delay'] = 0;
-
-	return true;
-	}
-
 	function add_slideshow($name, $delay, $slides){
+		if(empty($slides)){
+			error(S_SLIDESHOW_MUST_CONTAIN_SLIDES);
+			return false;
+		}
+
+		$screenids = zbx_objectValues($slides, 'screenid');
+		$screens = CScreen::get(array(
+			'screenids' => $screenids,
+			'output' => API_OUTPUT_SHORTEN,
+		));
+		$screens = ZBX_toHash($screens, 'screenid');
+		foreach($screenids as $screenid){
+			if(!isset($screens[$screenid])) return false;
+		}
+
 		foreach($slides as $slide){
-			if(!validate_slide($slide)) return false;
+			if(!isset($slide['delay'])) $slide['delay'] = 0;
 		}
 
 		$slideshowid = get_dbid('slideshows','slideshowid');
@@ -269,9 +181,23 @@ require_once('include/js.inc.php');
 	}
 
 	function update_slideshow($slideshowid, $name, $delay, $slides){
+		if(empty($slides)){
+			error(S_SLIDESHOW_MUST_CONTAIN_SLIDES);
+			return false;
+		}
+
+		$screenids = zbx_objectValues($slides, 'screenid');
+		$screens = CScreen::get(array(
+			'screenids' => $screenids,
+			'output' => API_OUTPUT_SHORTEN,
+		));
+		$screens = ZBX_toHash($screens, 'screenid');
+		foreach($screenids as $screenid){
+			if(!isset($screens[$screenid])) return false;
+		}
+
 		foreach($slides as $slide){
-			if(!validate_slide($slide))
-				return false;
+			if(!isset($slide['delay'])) $slide['delay'] = 0;
 		}
 
 		if(!$result = DBexecute('UPDATE slideshows SET name='.zbx_dbstr($name).',delay='.$delay.' WHERE slideshowid='.$slideshowid))
@@ -312,30 +238,16 @@ require_once('include/js.inc.php');
 			return $table;
 		}
 
-		global $DB;
-
-		$item=get_item_by_itemid($itemid);
+		$item = get_item_by_itemid($itemid);
 		switch($item['value_type']){
-			case ITEM_VALUE_TYPE_FLOAT:
-				$history_table = 'history';
-				$order_field = 'clock';
-				break;
-			case ITEM_VALUE_TYPE_UINT64:
-				$history_table = 'history_uint';
-				$order_field = 'clock';
-				break;
 			case ITEM_VALUE_TYPE_TEXT:
-				$history_table = 'history_text';
-				$order_field = 'id';
-				break;
 			case ITEM_VALUE_TYPE_LOG:
-				$history_table = 'history_log';
 				$order_field = 'id';
 				break;
+			case ITEM_VALUE_TYPE_FLOAT:
+			case ITEM_VALUE_TYPE_UINT64:
 			default:
-				$history_table = 'history_str';
 				$order_field = 'clock';
-				break;
 		}
 
 		$host = get_host_by_itemid($itemid);
@@ -343,51 +255,42 @@ require_once('include/js.inc.php');
 		$table = new CTableInfo();
 		$table->setHeader(array(S_TIMESTAMP,$host['host'].': '.item_description($item)));
 
-		$sql='SELECT h.clock,h.value,i.valuemapid '.
-				' FROM '.$history_table.' h, items i '.
-				' WHERE h.itemid=i.itemid '.
-					' AND i.itemid='.$itemid.
-				' ORDER BY h.'.$order_field.' DESC';
-		$result=DBselect($sql,$elements);
-		while($row=DBfetch($result)){
+		$options = array(
+			'history' => $item['value_type'],
+			'itemids' => $itemid,
+			'output' => API_OUTPUT_EXTEND,
+			'sortorder' => ZBX_SORT_DOWN,
+			'sortfield' => $order_field,
+			'limit' => $elements
+		);
+
+		$hData = CHistory::get($options);
+		foreach($hData as $hnum => $data){
 			switch($item['value_type']){
 				case ITEM_VALUE_TYPE_TEXT:
-					if($DB['TYPE'] == 'ORACLE'){
-						if(!isset($row['value'])){
-							$row['value'] = '';
-						}
-					}
-					/* do not use break */
+/* do not use break */
 				case ITEM_VALUE_TYPE_STR:
-					if($style){
-						$value = new CJSscript($row['value']);
-					}
-					else{
-						$value = htmlspecialchars($row['value']);
-//						$value = zbx_nl2br($value);
-					}
+					if($style) $value = new CJSscript($data['value']);
+					else $value = $data['value'];
 					break;
 				case ITEM_VALUE_TYPE_LOG:
-					if($style){
-						$value = new CJSscript($row['value']);
-					}
-					else{
-						$value = htmlspecialchars($row['value']);
-//						$value = zbx_nl2br($value);
-					}
+					if($style) $value = new CJSscript($data['value']);
+					else $value = $data['value'];
 					break;
 				default:
-					$value = $row['value'];
+					$value = $data['value'];
 					break;
 			}
 
-			if($row['valuemapid'] > 0)
-				$value = replace_value_by_map($value, $row['valuemapid']);
+			if($item['valuemapid'] > 0)
+				$value = replace_value_by_map($value, $item['valuemapid']);
 
-			$pre = new CTag('pre', true);
-			$pre->addItem($value);
-
-			$table->addRow(array(date(S_DATE_FORMAT_YMDHMS,$row['clock']),	$pre));
+			$table->addRow(
+					array(
+						zbx_date2str(S_SCREENS_PLAIN_TEXT_DATE_FORMAT,$data['clock']),
+						new CCol($value, 'pre')
+					)
+				);
 		}
 
 	return $table;
@@ -425,16 +328,16 @@ require_once('include/js.inc.php');
 
 	function get_screen_item_form(){
 		global $USER_DETAILS;
-		$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,PERM_READ_ONLY,PERM_RES_IDS_ARRAY,get_current_nodeid(true));
 
-		$form = new CFormTable(S_SCREEN_CELL_CONFIGURATION,'screenedit.php#form');
+		$form = new CFormTable(S_SCREEN_CELL_CONFIGURATION,'screenedit.php?screenid='.$_REQUEST['screenid']);
 		$form->SetHelp('web.screenedit.cell.php');
 
 		if(isset($_REQUEST['screenitemid'])){
-			$iresult=DBSelect('SELECT * FROM screens_items'.
-							' WHERE screenid='.$_REQUEST['screenid'].
-								' AND screenitemid='.$_REQUEST['screenitemid']
-							);
+			$sql = 'SELECT * '.
+					' FROM screens_items'.
+					' WHERE screenid='.$_REQUEST['screenid'].
+						' AND screenitemid='.$_REQUEST['screenitemid'];
+			$iresult=DBSelect($sql);
 
 			$form->addVar('screenitemid',$_REQUEST['screenitemid']);
 		}
@@ -498,31 +401,34 @@ require_once('include/js.inc.php');
 
 		if($resourcetype == SCREEN_RESOURCE_GRAPH){
 // User-defined graph
-			$resourceid = graph_accessible($resourceid)?$resourceid:0;
+			$options = array(
+				'graphids' => $resourceid,
+				'select_hosts' => array('hostid', 'host'),
+				'output' => API_OUTPUT_EXTEND
+			);
+			$graphs = CGraph::get($options);
 
 			$caption = '';
 			$id=0;
 
-			if($resourceid > 0){
-				$result = DBselect('SELECT DISTINCT g.graphid,g.name,n.name as node_name, h.host'.
-						' FROM graphs g '.
-							' LEFT JOIN graphs_items gi ON g.graphid=gi.graphid '.
-							' LEFT JOIN items i ON gi.itemid=i.itemid '.
-							' LEFT JOIN hosts h ON h.hostid=i.hostid '.
-							' LEFT JOIN nodes n ON n.nodeid='.DBid2nodeid('g.graphid').
-						' WHERE g.graphid='.$resourceid);
+			if(!empty($graphs)){
+				$id = $resourceid;
+				$graph = reset($graphs);
 
-				while($row=DBfetch($result)){
-					$row['node_name'] = isset($row['node_name']) ? '('.$row['node_name'].') ' : '';
-					$caption = $row['node_name'].$row['host'].':'.$row['name'];
-					$id = $resourceid;
-				}
+				order_result($graph['hosts'], 'host');
+				$graph['host'] = reset($graph['hosts']);
+
+				$caption = $graph['host']['host'].':'.$graph['name'];
+
+				$nodeName = get_node_name_by_elid($graph['host']['hostid']);
+				if(!zbx_empty($nodeName))
+					$caption = '('.$nodeName.') '.$caption;
 			}
 
 			$form->addVar('resourceid',$id);
 
 			$textfield = new CTextbox('caption',$caption,75,'yes');
-			$selectbtn = new CButton('select',S_SELECT,"javascript: return PopUp('popup.php?writeonly=1&dstfrm=".$form->getName()."&dstfld1=resourceid&dstfld2=caption&srctbl=graphs&srcfld1=graphid&srcfld2=name',800,450);");
+			$selectbtn = new CButton('select',S_SELECT,"javascript: return PopUp('popup.php?writeonly=1&dstfrm=".$form->getName()."&real_hosts=1&dstfld1=resourceid&dstfld2=caption&srctbl=graphs&srcfld1=graphid&srcfld2=name',800,450);");
 			$selectbtn->setAttribute('onmouseover',"javascript: this.style.cursor = 'pointer';");
 
 			$form->addRow(S_GRAPH_NAME,array($textfield,SPACE,$selectbtn));
@@ -530,54 +436,56 @@ require_once('include/js.inc.php');
 		}
 		else if($resourcetype == SCREEN_RESOURCE_SIMPLE_GRAPH){
 // Simple graph
+			$options = array(
+				'itemids' => $resourceid,
+				'select_hosts' => array('hostid', 'host'),
+				'output' => API_OUTPUT_EXTEND
+			);
+			$items = CItem::get($options);
+
 			$caption = '';
 			$id=0;
 
-			if($resourceid > 0){
-				$result=DBselect('SELECT n.name as node_name,h.host,i.description,i.itemid,i.key_ '.
-						' FROM hosts h,items i '.
-							' LEFT JOIN nodes n on n.nodeid='.DBid2nodeid('i.itemid').
-						' WHERE h.hostid=i.hostid '.
-							' AND h.status='.HOST_STATUS_MONITORED.
-							' AND i.status='.ITEM_STATUS_ACTIVE.
-							' AND '.DBcondition('i.hostid',$available_hosts).
-							' AND i.itemid='.$resourceid);
+			if(!empty($items)){
+				$id = $resourceid;
 
-				while($row=DBfetch($result)){
-					$description_=item_description($row);
-					$row["node_name"] = isset($row["node_name"]) ? "(".$row["node_name"].") " : '';
+				$item = reset($items);
+				$item['host'] = reset($item['hosts']);
 
-					$caption = $row['node_name'].$row['host'].': '.$description_;
-					$id = $resourceid;
-				}
+				$caption = item_description($item);
+
+				$nodeName = get_node_name_by_elid($item['itemid']);
+				if(!zbx_empty($nodeName))
+					$caption = '('.$nodeName.') '.$caption;
 			}
 
 			$form->addVar('resourceid',$id);
 
 			$textfield = new Ctextbox('caption',$caption,75,'yes');
-			$selectbtn = new Cbutton('select',S_SELECT,"javascript: return PopUp('popup.php?writeonly=1&dstfrm=".$form->getName()."&dstfld1=resourceid&dstfld2=caption&srctbl=simple_graph&srcfld1=itemid&srcfld2=description',800,450);");
+			$selectbtn = new Cbutton('select',S_SELECT,"javascript: return PopUp('popup.php?writeonly=1&real_hosts=1&dstfrm=".$form->getName()."&dstfld1=resourceid&dstfld2=caption&srctbl=simple_graph&srcfld1=itemid&srcfld2=description',800,450);");
 			$selectbtn->setAttribute('onmouseover',"javascript: this.style.cursor = 'pointer';");
 
 			$form->addRow(S_PARAMETER,array($textfield,SPACE,$selectbtn));
 		}
 		else if($resourcetype == SCREEN_RESOURCE_MAP){
 // Map
+			$options = array(
+				'sysmapids' => $resourceid,
+				'output' => API_OUTPUT_EXTEND
+			);
+			$maps = CMap::get($options);
+
 			$caption = '';
 			$id=0;
 
-			if($resourceid > 0){
-				$result=DBselect('SELECT n.name as node_name, s.sysmapid,s.name '.
-							' FROM sysmaps s'.
-								' LEFT JOIN nodes n ON n.nodeid='.DBid2nodeid('s.sysmapid').
-							' WHERE s.sysmapid='.$resourceid);
+			if(!empty($maps)){
+				$id = $resourceid;
+				$map = reset($maps);
 
-				while($row=DBfetch($result)){
-					if(!sysmap_accessible($row['sysmapid'],PERM_READ_ONLY)) continue;
-
-					$row['node_name'] = isset($row['node_name']) ? '('.$row['node_name'].') ' : '';
-					$caption = $row['node_name'].$row['name'];
-					$id = $resourceid;
-				}
+				$caption = $map['name'];
+				$nodeName = get_node_name_by_elid($map['sysmapid']);
+				if(!zbx_empty($nodeName))
+					$caption = '('.$nodeName.') '.$caption;
 			}
 
 			$form->addVar('resourceid',$id);
@@ -591,26 +499,27 @@ require_once('include/js.inc.php');
 		}
 		else if($resourcetype == SCREEN_RESOURCE_PLAIN_TEXT){
 // Plain text
+			$options = array(
+				'itemids' => $resourceid,
+				'select_hosts' => array('hostid', 'host'),
+				'output' => API_OUTPUT_EXTEND
+			);
+			$items = CItem::get($options);
+
 			$caption = '';
 			$id=0;
 
-			if($resourceid > 0){
-				$result=DBselect('SELECT n.name as node_name,h.host,i.description,i.itemid,i.key_ '.
-						' FROM hosts h,items i '.
-							' LEFT JOIN nodes n on n.nodeid='.DBid2nodeid('i.itemid').
-						' WHERE h.hostid=i.hostid '.
-							' AND h.status='.HOST_STATUS_MONITORED.
-							' AND i.status='.ITEM_STATUS_ACTIVE.
-							' AND '.DBcondition('i.hostid',$available_hosts).
-							' AND i.itemid='.$resourceid);
+			if(!empty($items)){
+				$id = $resourceid;
 
-				while($row=DBfetch($result)){
-					$description_=item_description($row);
-					$row["node_name"] = isset($row["node_name"]) ? '('.$row["node_name"].') ' : '';
+				$item = reset($items);
+				$item['host'] = reset($item['hosts']);
 
-					$caption = $row['node_name'].$row['host'].': '.$description_;
-					$id = $resourceid;
-				}
+				$caption = item_description($item);
+
+				$nodeName = get_node_name_by_elid($item['itemid']);
+				if(!zbx_empty($nodeName))
+					$caption = '('.$nodeName.') '.$caption;
 			}
 
 			$form->addVar('resourceid',$id);
@@ -723,7 +632,11 @@ require_once('include/js.inc.php');
 							' WHERE s.screenid='.$resourceid);
 
 				while($row=DBfetch($result)){
-					if(!screen_accessible($row['screenid'], PERM_READ_ONLY)) continue;
+					$r = CScreen::get(array(
+						'screenids' => $row['screenid'],
+						'output' => API_OUTPUT_SHORTEN
+					));
+					if(empty($r)) continue;
 					if(check_screen_recursion($_REQUEST['screenid'],$row['screenid'])) continue;
 
 					$row['node_name'] = isset($row['node_name']) ? '('.$row['node_name'].') ' : '';
@@ -864,7 +777,12 @@ require_once('include/js.inc.php');
 		global $USER_DETAILS;
 
 		if($screenid == 0) return new CTableInfo(S_NO_SCREENS_DEFINED);
-		if(!screen_accessible($screenid, ($editmode == 1)?PERM_READ_WRITE:PERM_READ_ONLY))
+		$r = CScreen::get(array(
+			'screenids' => $screenid,
+			'editable' => ($editmode == 1 ? 1 : null),
+			'output' => API_OUTPUT_SHORTEN
+		));
+		if(empty($r))
 			access_deny();
 
 		if(is_null($effectiveperiod))
@@ -873,10 +791,10 @@ require_once('include/js.inc.php');
 		$result=DBselect('SELECT name,hsize,vsize FROM screens WHERE screenid='.$screenid);
 		$row=DBfetch($result);
 		if(!$row) return new CTableInfo(S_NO_SCREENS_DEFINED);
-				
+
 		$sql = 'SELECT * FROM screens_items WHERE screenid='.$screenid;
 		$iresult = DBSelect($sql);
-		
+
 		$skip_field = array();
 		$irows = array();
 		while($irow = DBfetch($iresult)){
@@ -888,9 +806,9 @@ require_once('include/js.inc.php');
 						$skip_field[$irow['y']+$i][$irow['x']+$j] = 1;
 					}
 				}
-			}				
+			}
 		}
-	
+
 		$table = new CTable(new CLink(S_NO_ROWS_IN_SCREEN.SPACE.$row['name'],'screenconf.php?config=0&form=update&screenid='.$screenid),
 			($editmode == 0 || $editmode == 2) ? 'screen_view' : 'screen_edit');
 		$table->setAttribute('id', 'iframe');
@@ -929,7 +847,7 @@ require_once('include/js.inc.php');
 						break;
 					}
 				}
-				
+
 				if($irow){
 					$screenitemid	= $irow['screenitemid'];
 					$resourcetype	= $irow['resourcetype'];
@@ -998,31 +916,54 @@ require_once('include/js.inc.php');
 					$graphDims['graphHeight'] = $height;
 					$graphDims['width'] = $width;
 
-					$sql = 'SELECT g.graphid, g.show_legend as legend, g.show_3d as show3d '.
-							' FROM graphs g '.
-							' WHERE g.graphid='.$resourceid;
-					$res = DBselect($sql);
-					if($graph=DBfetch($res)){
+					$graph = get_graph_by_graphid($resourceid);
+
+					if($graph){
 						$graphid = $graph['graphid'];
-						$legend = $graph['legend'];
-						$graph3d = $graph['show3d'];
+						$legend = $graph['show_legend'];
+						$graph3d = $graph['show_3d'];
 					}
 //-------------
 
 // Host feature
 					if(($dynamic == SCREEN_DYNAMIC_ITEM) && isset($_REQUEST['hostid']) && ($_REQUEST['hostid']>0)){
+						$options = array(
+							'hostids' => $_REQUEST['hostid'],
+							'output' => API_OUTPUT_EXTEND
+						);
+						$hosts = CHost::get($options);
+						$host = reset($hosts);
+
 						$def_items = array();
 						$di_res = get_graphitems_by_graphid($resourceid);
-						while( $gitem = DBfetch($di_res)){
-							$def_items[] = $gitem;
+						while($gitem = DBfetch($di_res)) $def_items[] = $gitem;
+
+						$new_items = get_same_graphitems_for_host($def_items, $_REQUEST['hostid'], false);
+
+						if(($graph['graphtype']==GRAPH_TYPE_PIE) || ($graph['graphtype']==GRAPH_TYPE_EXPLODED))
+							$url = 'chart7.php';
+						else
+							$url = 'chart3.php';
+//-----
+
+						$url = new Curl($url);
+						foreach($graph as $name => $value){
+							if(($name == 'width') || ($name == 'height')) continue;
+
+							$url->setArgument($name, $value);
 						}
 
-						$url='';
-						if($new_items = get_same_graphitems_for_host($def_items, $_REQUEST['hostid'], false)){
-							$url.= make_url_from_gitems($new_items);
+						foreach($new_items as $ginum => $gitem){
+							unset($gitem['gitemid']);
+							unset($gitem['graphid']);
+
+							foreach($gitem as $name => $value){
+								$url->setArgument('items['.$gitem['itemid'].']['.$name.']', $value);
+							}
 						}
 
-						$url= make_url_from_graphid($resourceid,false).$url;
+						$url->setArgument('name', $host['host'].': '.$graph['name']);
+						$url = $url->getUrl();
 					}
 //-------------
 
@@ -1047,19 +988,17 @@ require_once('include/js.inc.php');
 
 					$default = false;
 					if(($graphDims['graphtype'] == GRAPH_TYPE_PIE) || ($graphDims['graphtype'] == GRAPH_TYPE_EXPLODED)){
-						if(($dynamic==SCREEN_SIMPLE_ITEM) || empty($url)){
+						if(($dynamic == SCREEN_SIMPLE_ITEM) || empty($url)){
 							$url='chart6.php?graphid='.$resourceid;
 							$default = true;
 						}
 
 						$timeline = array();
 						$timeline['period'] = $effectiveperiod;
-						$timeline['starttime'] = get_min_itemclock_by_graphid($resourceid);
+						$timeline['starttime'] = date('YmdHis', get_min_itemclock_by_graphid($resourceid));
 
 						if(isset($_REQUEST['stime'])){
-							$bstime = $_REQUEST['stime'];
-							$timeline['usertime'] = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
-							$timeline['usertime'] += $timeline['period'];
+							$timeline['usertime'] = date('YmdHis', zbxDateToTime($_REQUEST['stime']) + $timeline['period']);
 						}
 
 						// $src = $url.'&width='.$width.'&height='.$height.'&legend='.$legend.'&graph3d='.$graph3d;
@@ -1069,7 +1008,7 @@ require_once('include/js.inc.php');
 
 					}
 					else{
-						if(($dynamic==SCREEN_SIMPLE_ITEM) || empty($url)){
+						if(($dynamic == SCREEN_SIMPLE_ITEM) || empty($url)){
 							$url='chart2.php?graphid='.$resourceid;
 							$default = true;
 						}
@@ -1079,12 +1018,10 @@ require_once('include/js.inc.php');
 						$timeline = array();
 						if(isset($graphid) && !is_null($graphid) && ($editmode != 1)){
 							$timeline['period'] = $effectiveperiod;
-							$timeline['starttime'] = time() - ZBX_MAX_PERIOD; //get_min_itemclock_by_graphid($graphid);
+							$timeline['starttime'] = date('YmdHis', time() - ZBX_MAX_PERIOD); //get_min_itemclock_by_graphid($graphid);
 
 							if(isset($_REQUEST['stime'])){
-								$bstime = $_REQUEST['stime'];
-								$timeline['usertime'] = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
-								$timeline['usertime'] += $timeline['period'];
+								$timeline['usertime'] = date('YmdHis', zbxDateToTime($_REQUEST['stime']) + $timeline['period']);
 							}
 
 							$objData['loadSBox'] = 1;
@@ -1094,27 +1031,31 @@ require_once('include/js.inc.php');
 						$objData['src'] = $src;
 					}
 
-					if($default){
-						$item = new CLink(null, $action);
-						$item->setAttribute('id', $containerid);
-					}
-					else{
-						$item = new CDiv();
-						$item->setAttribute('id', $containerid);
+					if($editmode || !$default) $item = new CDiv();
+					else $item = new CLink(null, $action);
+
+					$item->setAttribute('id', $containerid);
+
+					$item = array($item);
+					if($editmode == 1){
+						$item[] = BR();
+						$item[] = new CLink(S_CHANGE, $action);
 					}
 
-//					zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
-					insert_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
+
+					if($editmode == 2){
+						insert_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
+					}
+					else{
+						zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
+					}
 
 				}
 				else if( ($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_SIMPLE_GRAPH) ){
 					$dom_graph_id = 'graph_'.$screenitemid.'_'.$resourceid;
 					$containerid = 'graph_cont_'.$screenitemid.'_'.$resourceid;
 
-					$graphDims['graphHeight'] = 200;
-					$graphDims['shiftXleft'] = 100;
-					$graphDims['shiftXright'] = 50;
-					$graphDims['graphtype'] = 0;
+					$graphDims = getGraphDims();
 					$graphDims['graphHeight'] = $height;
 					$graphDims['width'] = $width;
 
@@ -1143,15 +1084,13 @@ require_once('include/js.inc.php');
 					if(($editmode == 0) && !empty($resourceid)) $action = 'history.php?action=showgraph&itemid='.$resourceid.url_param('period').url_param('stime');
 
 					$timeline = array();
-					$timeline['starttime'] = time() - ZBX_MAX_PERIOD;
+					$timeline['starttime'] = date('YmdHis', time() - ZBX_MAX_PERIOD);
 
 					if(!zbx_empty($resourceid) && ($editmode != 1)){
 						$timeline['period'] = $effectiveperiod;
 
 						if(isset($_REQUEST['stime'])){
-							$bstime = $_REQUEST['stime'];
-							$timeline['usertime'] = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
-							$timeline['usertime'] += $timeline['period'];
+							$timeline['usertime'] = date('YmdHis', zbxDateToTime($_REQUEST['stime']) + $timeline['period']);
 						}
 
 						$objData['loadSBox'] = 1;
@@ -1162,11 +1101,24 @@ require_once('include/js.inc.php');
 
 					$objData['src'] = $src;
 
-					$item = new CLink(null, $action);
+					if($editmode) $item = new CDiv();
+					else $item = new CLink(null, $action);
+
 					$item->setAttribute('id', $containerid);
 
-//					zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
-					insert_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
+					$item = array($item);
+					if($editmode == 1){
+						$item[] = BR();
+						$item[] = new CLink(S_CHANGE, $action);
+					}
+
+					if($editmode == 2){
+						insert_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
+					}
+					else{
+						zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
+					}
+
 				}
 				else if( ($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_MAP) ){
 
@@ -1215,45 +1167,50 @@ require_once('include/js.inc.php');
 						$hostgroup = reset($hostgroups);
 
 						$tr_form = new CSpan(S_GROUP.': '.$hostgroup['name'], 'white');
-						$params['groupid'] = $hostgroup['groupid'];
+						$params['groupids'] = $hostgroup['groupid'];
 					}
 ///-----------------------
 					else{
-						$params['groupid'] = get_request('tr_groupid', CProfile::get('web.screens.tr_groupid',0));
-						$params['hostid'] = get_request('tr_hostid', CProfile::get('web.screens.tr_hostid',0));
+						$groupid = get_request('tr_groupid', CProfile::get('web.screens.tr_groupid',0));
+						$hostid = get_request('tr_hostid', CProfile::get('web.screens.tr_hostid',0));
 
-						CProfile::update('web.screens.tr_groupid',$params['groupid'], PROFILE_TYPE_ID);
-						CProfile::update('web.screens.tr_hostid',$params['hostid'], PROFILE_TYPE_ID);
-
-						$tr_form = new CForm();
-
-						$cmbGroup = new CComboBox('tr_groupid',$params['groupid'],'submit()');
-						$cmbHosts = new CComboBox('tr_hostid',$params['hostid'],'submit()');
-
-						$cmbGroup->addItem(0,S_ALL_SMALL);
-						$cmbHosts->addItem(0,S_ALL_SMALL);
+						CProfile::update('web.screens.tr_groupid',$groupid, PROFILE_TYPE_ID);
+						CProfile::update('web.screens.tr_hostid',$hostid, PROFILE_TYPE_ID);
 
 						$options = array(
 							'monitored_hosts' => 1,
 							'output' => API_OUTPUT_EXTEND
 						);
 						$groups = CHostGroup::get($options);
+						order_result($groups, 'name');
+
+						$options = array(
+							'monitored_hosts' => 1,
+							'output' => API_OUTPUT_EXTEND
+						);
+						if($groupid > 0) $options['groupids'] = $groupid;
+
+						$hosts = CHost::get($options);
+						$hosts = zbx_toHash($hosts, 'hostid');
+						order_result($hosts, 'host');
+
+						if(!isset($hosts[$hostid])) $hostid = 0;
+
+						$tr_form = new CForm();
+
+						$cmbGroup = new CComboBox('tr_groupid',$groupid,'submit()');
+						$cmbHosts = new CComboBox('tr_hostid',$hostid,'submit()');
+
+						$cmbGroup->addItem(0,S_ALL_SMALL);
+						$cmbHosts->addItem(0,S_ALL_SMALL);
+
 						foreach($groups as $gnum => $group){
 							$cmbGroup->addItem(
 								$group['groupid'],
 								get_node_name_by_elid($group['groupid'], null, ': ').$group['name']
 							);
 						}
-						$tr_form->addItem(array(S_GROUP.SPACE,$cmbGroup));
 
-						$options = array(
-							'monitored_hosts' => 1,
-							'output' => API_OUTPUT_EXTEND
-						);
-						if($params['groupid'] > 0)
-							$options['groupids'] = $params['groupid'];
-
-						$hosts = CHost::get($options);
 						foreach($hosts as $hnum => $host){
 							$cmbHosts->addItem(
 								$host['hostid'],
@@ -1261,18 +1218,18 @@ require_once('include/js.inc.php');
 							);
 						}
 
+						$tr_form->addItem(array(S_GROUP.SPACE,$cmbGroup));
 						$tr_form->addItem(array(SPACE.S_HOST.SPACE,$cmbHosts));
 
-						$item[] = make_latest_issues($params);
-
-						if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
+						if($groupid > 0) $params['groupids'] = $groupid;
+						if($hostid > 0) $params['hostids'] = $hostid;
 					}
-///-----------------------
 
-					$item = array(get_table_header(array(S_STATUS_OF_TRIGGERS_BIG,SPACE,date('[H:i:s]',time())), $tr_form));
+					$item = array(get_table_header(array(S_STATUS_OF_TRIGGERS_BIG,SPACE,zbx_date2str(S_SCREENS_TRIGGER_FORM_DATE_FORMAT)), $tr_form));
 					$item[] = make_latest_issues($params);
 
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
+///-----------------------
 				}
 				else if(($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_HOST_TRIGGERS)){
 					$params = array(
@@ -1293,45 +1250,50 @@ require_once('include/js.inc.php');
 						$host = reset($hosts);
 
 						$tr_form = new CSpan(S_HOST.': '.$host['host'], 'white');
-						$params['hostid'] = $host['hostid'];
+						$params['hostids'] = $host['hostid'];
 					}
 ///-----------------------
 					else{
-						$params['groupid'] = get_request('tr_groupid',CProfile::get('web.screens.tr_groupid',0));
-						$params['hostid'] = get_request('tr_hostid',CProfile::get('web.screens.tr_hostid',0));
+						$groupid = get_request('tr_groupid', CProfile::get('web.screens.tr_groupid',0));
+						$hostid = get_request('tr_hostid', CProfile::get('web.screens.tr_hostid',0));
 
-						CProfile::update('web.screens.tr_groupid',$params['groupid'], PROFILE_TYPE_ID);
-						CProfile::update('web.screens.tr_hostid',$params['hostid'], PROFILE_TYPE_ID);
-
-						$tr_form = new CForm();
-
-						$cmbGroup = new CComboBox('tr_groupid',$params['groupid'],'submit()');
-						$cmbHosts = new CComboBox('tr_hostid',$params['hostid'],'submit()');
-
-						$cmbGroup->addItem(0,S_ALL_SMALL);
-						$cmbHosts->addItem(0,S_ALL_SMALL);
+						CProfile::update('web.screens.tr_groupid',$groupid, PROFILE_TYPE_ID);
+						CProfile::update('web.screens.tr_hostid',$hostid, PROFILE_TYPE_ID);
 
 						$options = array(
 							'monitored_hosts' => 1,
 							'output' => API_OUTPUT_EXTEND
 						);
 						$groups = CHostGroup::get($options);
+						order_result($groups, 'name');
+
+						$options = array(
+							'monitored_hosts' => 1,
+							'output' => API_OUTPUT_EXTEND
+						);
+						if($groupid > 0) $options['groupids'] = $groupid;
+
+						$hosts = CHost::get($options);
+						$hosts = zbx_toHash($hosts, 'hostid');
+						order_result($hosts, 'host');
+
+						if(!isset($hosts[$hostid])) $hostid = 0;
+
+						$tr_form = new CForm();
+
+						$cmbGroup = new CComboBox('tr_groupid',$groupid,'submit()');
+						$cmbHosts = new CComboBox('tr_hostid',$hostid,'submit()');
+
+						$cmbGroup->addItem(0,S_ALL_SMALL);
+						$cmbHosts->addItem(0,S_ALL_SMALL);
+
 						foreach($groups as $gnum => $group){
 							$cmbGroup->addItem(
 								$group['groupid'],
 								get_node_name_by_elid($group['groupid'], null, ': ').$group['name']
 							);
 						}
-						$tr_form->addItem(array(S_GROUP.SPACE,$cmbGroup));
 
-						$options = array(
-							'monitored_hosts' => 1,
-							'output' => API_OUTPUT_EXTEND
-						);
-						if($params['groupid'] > 0)
-							$options['groupids'] = $params['groupid'];
-
-						$hosts = CHost::get($options);
 						foreach($hosts as $hnum => $host){
 							$cmbHosts->addItem(
 								$host['hostid'],
@@ -1339,15 +1301,15 @@ require_once('include/js.inc.php');
 							);
 						}
 
+						$tr_form->addItem(array(S_GROUP.SPACE,$cmbGroup));
 						$tr_form->addItem(array(SPACE.S_HOST.SPACE,$cmbHosts));
 
-						$item[] = make_latest_issues($params);
-
-						if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
+						if($groupid > 0) $params['groupids'] = $groupid;
+						if($hostid > 0) $params['hostids'] = $hostid;
 					}
 ///-----------------------
 
-					$item = array(get_table_header(array(S_STATUS_OF_TRIGGERS_BIG,SPACE,date('[H:i:s]',time())), $tr_form));
+					$item = array(get_table_header(array(S_STATUS_OF_TRIGGERS_BIG,SPACE,zbx_date2str(S_SCREENS_TRIGGER_FORM_DATE_FORMAT)), $tr_form));
 					$item[] = make_latest_issues($params);
 
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
@@ -1358,11 +1320,12 @@ require_once('include/js.inc.php');
 						'hostids' => null,
 						'maintenance' => null,
 						'severity' => null,
-						'limit' => null
+						'limit' => null,
+						'extAck' => 0,
 					);
 
-					$item = array(get_table_header(array(S_SYSTEM_STATUS,SPACE,date('[H:i:s]',time()))));
-					$item[] = make_system_summary($params);
+					$item = array(get_table_header(array(S_SYSTEM_STATUS,SPACE,zbx_date2str(S_SCREENS_TRIGGER_FORM_DATE_FORMAT))));
+					$item[] = make_system_status($params);
 
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
 				}
@@ -1371,7 +1334,7 @@ require_once('include/js.inc.php');
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
 				}
 				else if( ($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_TRIGGERS_INFO) ){
-					$item = new CTriggersInfo($resourceid, $style);
+					$item = new CTriggersInfo($resourceid, null, $style);
 					$item = array($item);
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
 				}
@@ -1412,7 +1375,52 @@ require_once('include/js.inc.php');
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
 				}
 				else if(($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_EVENTS)){
-					$item = array(get_history_of_triggers_events(0, $elements));
+
+					$options = array(
+						'monitored' => 1,
+						'value' => array(TRIGGER_VALUE_TRUE, TRIGGER_VALUE_FALSE),
+						'limit' => $elements
+					);
+
+					$hide_unknown = CProfile::get('web.events.filter.hide_unknown',0);
+					if($hide_unknown){
+						$options['value'] = array(TRIGGER_VALUE_TRUE, TRIGGER_VALUE_FALSE);
+					}
+
+					$item = new CTableInfo(S_NO_EVENTS_FOUND);
+					$item->SetHeader(array(
+							S_TIME,
+							is_show_all_nodes() ? S_NODE : null,
+							S_HOST,
+							S_DESCRIPTION,
+							S_VALUE,
+							S_SEVERITY
+							));
+
+					$events = getLastEvents($options);
+					foreach($events as $enum => $event){
+						$trigger = $event['trigger'];
+						$host = $event['host'];
+
+						$value = new CCol(trigger_value2str($event['value']), get_trigger_value_style($event['value']));
+
+//						$row = zbx_array_merge($triggers[$row['triggerid']],$row);
+//						if((1 == $hide_unknown) && (!event_initial_time($row,$hide_unknown))) continue;
+
+						$item->addRow(array(
+							zbx_date2str(S_EVENTS_TRIGGERS_EVENTS_HISTORY_LIST_DATE_FORMAT,$event['clock']),
+							get_node_name_by_elid($event['objectid']),
+							$host['host'],
+							new CLink(
+								$trigger['description'],
+								'tr_events.php?triggerid='.$event['objectid'].'&eventid='.$event['eventid']
+								),
+							$value,
+							new CCol(get_severity_description($trigger['priority']), get_severity_style($trigger['priority'])),
+						));
+					}
+
+					$item = array($item);
 					if($editmode == 1)	array_push($item,new CLink(S_CHANGE,$action));
 				}
 				else{
@@ -1540,12 +1548,12 @@ require_once('include/js.inc.php');
 		foreach($exportScreens as $snum => $screen){
 			$screenItems = separateScreenElements($screen);
 
-			$screens += zbx_objectValues($screenItems['screens'], 'resourceid');
-			$sysmaps += zbx_objectValues($screenItems['sysmaps'], 'resourceid');
-			$hostgroups += zbx_objectValues($screenItems['hostgroups'], 'resourceid');
-			$hosts += zbx_objectValues($screenItems['hosts'], 'resourceid');
-			$graphs += zbx_objectValues($screenItems['graphs'], 'resourceid');
-			$items += zbx_objectValues($screenItems['items'], 'resourceid');
+			$screens = array_merge($screens, zbx_objectValues($screenItems['screens'], 'resourceid'));
+			$sysmaps = array_merge($sysmaps, zbx_objectValues($screenItems['sysmaps'], 'resourceid'));
+			$hostgroups = array_merge($hostgroups, zbx_objectValues($screenItems['hostgroups'], 'resourceid'));
+			$hosts = array_merge($hosts, zbx_objectValues($screenItems['hosts'], 'resourceid'));
+			$graphs = array_merge($graphs, zbx_objectValues($screenItems['graphs'], 'resourceid'));
+			$items = array_merge($items, zbx_objectValues($screenItems['items'], 'resourceid'));
 		}
 
 		$screens = screenIdents($screens);
@@ -1558,7 +1566,6 @@ require_once('include/js.inc.php');
 		try{
 			foreach($exportScreens as $snum => &$screen){
 				unset($screen['screenid']);
-				$screen['backgroundid'] = ($screen['backgroundid'] > 0)?$images[$screen['backgroundid']]:'';
 
 				foreach($screen['screenitems'] as $snum => &$screenItem){
 					unset($screenItem['screenid']);
@@ -1596,7 +1603,7 @@ require_once('include/js.inc.php');
 			unset($screen);
 		}
 		catch(Exception $e){
-			throw new exception($e->show_message());
+			throw new exception($e->getMessage());
 		}
 	}
 ?>

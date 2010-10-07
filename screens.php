@@ -27,7 +27,7 @@
 	$page['title'] = 'S_CUSTOM_SCREENS';
 	$page['file'] = 'screens.php';
 	$page['hist_arg'] = array('elementid');
-	$page['scripts'] = array('scriptaculous.js?load=effects,dragdrop','class.calendar.js','gtlc.js');
+	$page['scripts'] = array('effects.js','dragdrop.js','class.calendar.js','gtlc.js');
 
 	$page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
@@ -58,10 +58,11 @@
 		'fullscreen'=>	array(T_ZBX_INT, O_OPT,	P_SYS,		IN('0,1,2'),		NULL),
 //ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			NULL),
-		'favid'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		NULL),
+		'favid'=>		array(T_ZBX_INT, O_OPT, P_ACT,  NULL,			NULL),
 
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,  NOT_EMPTY,		NULL),
-		'action'=>		array(T_ZBX_STR, O_OPT, P_ACT, 	IN("'add','remove'"),NULL)
+		'action'=>		array(T_ZBX_STR, O_OPT, P_ACT, 	IN("'add','remove','flop'"),NULL)
 	);
 
 	check_fields($fields);
@@ -69,12 +70,13 @@
 <?php
 	if(isset($_REQUEST['favobj'])){
 		if('hat' == $_REQUEST['favobj']){
-			CProfile::update('web.screens.hats.'.$_REQUEST['favid'].'.state',$_REQUEST['state'], PROFILE_TYPE_INT);
+			CProfile::update('web.screens.hats.'.$_REQUEST['favref'].'.state',$_REQUEST['state'], PROFILE_TYPE_INT);
 		}
 
 		if('filter' == $_REQUEST['favobj']){
 			CProfile::update('web.screens.filter.state',$_REQUEST['state'], PROFILE_TYPE_INT);
 		}
+
 		if('timeline' == $_REQUEST['favobj']){
 			if(isset($_REQUEST['elementid']) && isset($_REQUEST['period'])){
 				navigation_bar_calc('web.screens', $_REQUEST['elementid'],true);
@@ -116,82 +118,68 @@
 	if(2 != $_REQUEST['fullscreen'])
 		CProfile::update('web.screens.elementid',$_REQUEST['elementid'], PROFILE_TYPE_ID);
 
-?>
-<?php
 
 	$screens_wdgt = new CWidget();
-	
+
 	$scroll_div = new CDiv();
 	$scroll_div->setAttribute('id','scrollbar_cntr');
 	$screens_wdgt->addFlicker($scroll_div, CProfile::get('web.screens.filter.state',1));
-	
+
 	$formHeader = new CForm();
 	$cmbConfig = new CComboBox('config', 'screens.php', 'javascript: redirect(this.options[this.selectedIndex].value);');
 		$cmbConfig->addItem('screens.php', S_SCREENS);
 		$cmbConfig->addItem('slides.php', S_SLIDESHOWS);
 	$formHeader->addItem($cmbConfig);
-	
-	
+
+
 	$screens = CScreen::get(array(
 		'nodeids' => get_current_nodeid(),
 		'extendoutput' => 1
 	));
 	$screens = zbx_toHash($screens, 'screenid');
 	order_result($screens, 'name');
-	
+
 	if(empty($screens)){
 		$screens_wdgt->addPageHeader(S_SCREENS_BIG, $formHeader);
 		$screens_wdgt->addItem(BR());
 		$screens_wdgt->addItem(new CTableInfo(S_NO_SCREENS_DEFINED));
-		$screens_wdgt->show();	
+		$screens_wdgt->show();
 	}
 	else{
 		if(!isset($screens[$elementid])){
 			$screen = reset($screens);
-			$elementid = $screen['screenid'];	
+			$elementid = $screen['screenid'];
 		}
-		
-		$effectiveperiod = navigation_bar_calc('web.screens', $_REQUEST['elementid'], true);
-		
+
+		$effectiveperiod = navigation_bar_calc('web.screens', $elementid, true);
+
 		$element_name = $screens[$elementid]['name'];
-		
+
 // PAGE HEADER {{{
-		if(infavorites('web.favorite.screenids',$elementid,'screenid')){
-			$icon = new CDiv(SPACE,'iconminus');
-			$icon->setAttribute('title',S_REMOVE_FROM.' '.S_FAVOURITES);
-			$icon->addAction('onclick', new CJSscript("javascript: rm4favorites('screenid','".$elementid."',0);"));
-		}
-		else{
-			$icon = new CDiv(SPACE,'iconplus');
-			$icon->setAttribute('title',S_ADD_TO.' '.S_FAVOURITES);
-			$icon->addAction('onclick', new CJSscript("javascript: add2favorites('screenid','".$elementid."');"));
-		}
-		$icon->setAttribute('id','addrm_fav');
-
-		$url = '?elementid='.$elementid.($_REQUEST['fullscreen']?'':'&fullscreen=1');
-		$url.=url_param('groupid').url_param('hostid');
-
-		$fs_icon = new CDiv(SPACE,'fullscreen');
-		$fs_icon->setAttribute('title',$_REQUEST['fullscreen']?S_NORMAL.' '.S_VIEW:S_FULLSCREEN);
-		$fs_icon->addAction('onclick',new CJSscript("javascript: document.location = '".$url."';"));
+		$icon = get_icon('favourite', array(
+			'fav' => 'web.favorite.screenids',
+			'elname' => 'screenid',
+			'elid' => $elementid,
+		));
+		$fs_icon = get_icon('fullscreen', array('fullscreen' => $_REQUEST['fullscreen']));
 		
 		$screens_wdgt->addPageHeader(S_SCREENS_BIG, array($formHeader, SPACE, $icon, $fs_icon));
 		$screens_wdgt->addItem(BR());
-// }}} PAGE HEADER		
-	
-	
+// }}} PAGE HEADER
+
+
 // HEADER {{{
 		$form = new CForm(null, 'get');
 		$form->addVar('fullscreen', $_REQUEST['fullscreen']);
-		
+
 		$cmbElements = new CComboBox('elementid', $elementid, 'submit()');
 		foreach($screens as $snum => $screen){
 			$cmbElements->addItem($screen['screenid'], get_node_name_by_elid($screen['screenid'], null, ': ').$screen['name']);
 		}
 		$form->addItem(array(S_SCREENS.SPACE, $cmbElements));
-		
+
 		$screens_wdgt->addHeader($element_name, $form);
-// }}} HEADER		
+// }}} HEADER
 
 		if((2 != $_REQUEST['fullscreen']) && check_dynamic_items($elementid, 0)){
 			if(!isset($_REQUEST['hostid'])){
@@ -228,13 +216,11 @@
 		if(2 != $_REQUEST['fullscreen']){
 			$timeline = array(
 				'period' => $effectiveperiod,
-				'starttime' => time() - ZBX_MAX_PERIOD
+				'starttime' => date('YmdHis', time() - ZBX_MAX_PERIOD)
 			);
 
 			if(isset($_REQUEST['stime'])){
-				$bstime = $_REQUEST['stime'];
-				$timeline['usertime'] = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
-				$timeline['usertime'] += $timeline['period'];
+				$timeline['usertime'] = date('YmdHis', zbxDateToTime($_REQUEST['stime']) + $timeline['period']);
 			}
 
 			$dom_graph_id = 'screen_scroll';
@@ -251,7 +237,7 @@
 
 			zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
 			zbx_add_post_js('timeControl.processObjects();');
-		}		
+		}
 
 		$screens_wdgt->addItem($element);
 		$screens_wdgt->show();
@@ -261,6 +247,6 @@
 		echo SBR;
 	}
 
-	
+
 include_once('include/page_footer.php');
 ?>

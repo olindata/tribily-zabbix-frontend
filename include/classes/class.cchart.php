@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2009 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -68,6 +68,8 @@ class CChart extends CGraphDraw{
 		$this->grid = array();				// vertical & horizontal grids params
 
 		$this->gridLinesCount = array();	// How many grids to draw
+		$this->gridStep = array();			// Grid step
+
 		$this->gridPixels = 25;				// optimal grid size
 		$this->gridPixelsVert = 40;			//
 	}
@@ -111,7 +113,7 @@ class CChart extends CGraphDraw{
 		$this->m_showTriggers = ($value==1)?1:0;
 	}
 
-	public function addItem($itemid, $axis=GRAPH_YAXIS_SIDE_LEFT, $calc_fnc=CALC_FNC_AVG, $color=null, $drawtype=null, $type=null, $periods_cnt=null){
+	public function addItem($itemid, $axis=GRAPH_YAXIS_SIDE_DEFAULT, $calc_fnc=CALC_FNC_AVG, $color=null, $drawtype=null, $type=null, $periods_cnt=null){
 		if($this->type == GRAPH_TYPE_STACKED /* stacked graph */)
 			$drawtype = GRAPH_ITEM_DRAWTYPE_FILLED_REGION;
 
@@ -131,7 +133,7 @@ class CChart extends CGraphDraw{
 		$this->items[$this->num]['host'] = $host['host'];
 		$this->items[$this->num]['color'] = is_null($color) ? 'Dark Green' : $color;
 		$this->items[$this->num]['drawtype'] = is_null($drawtype) ? GRAPH_ITEM_DRAWTYPE_LINE : $drawtype;
-		$this->items[$this->num]['axisside'] = is_null($axis) ? GRAPH_YAXIS_SIDE_LEFT : $axis;
+		$this->items[$this->num]['axisside'] = is_null($axis) ? GRAPH_YAXIS_SIDE_DEFAULT : $axis;
 		$this->items[$this->num]['calc_fnc'] = is_null($calc_fnc) ? CALC_FNC_AVG : $calc_fnc;
 		$this->items[$this->num]['calc_type'] = is_null($type) ? GRAPH_ITEM_SIMPLE : $type;
 		$this->items[$this->num]['periods_cnt'] = is_null($periods_cnt) ? 0 : $periods_cnt;
@@ -198,7 +200,8 @@ class CChart extends CGraphDraw{
 			$this->stime	= $now - $this->period;
 		}
 
-		$this->diffTZ = (date('I',$this->stime) - date('I',$this->stime + $this->period)) * 3600;
+		$this->diffTZ = (date('Z',$this->stime) - date('Z',$this->stime + $this->period));
+
 //		$this->stime += $this->diffTZ;
 
 		$this->from_time	= $this->stime; // + timeZone offset
@@ -206,7 +209,7 @@ class CChart extends CGraphDraw{
 
 		$p = $this->to_time - $this->from_time;		// graph size in time
 		$z = $p - $this->from_time % $p;			// graphsize - mod(from_time,p) for Oracle...
-		$x = $this->sizeX;							// graph size in px
+		$x = $this->sizeX;						// graph size in px
 
 		$this->itemsHost = null;
 		for($i=0; $i < $this->num; $i++){
@@ -306,9 +309,8 @@ class CChart extends CGraphDraw{
 
 			foreach($sql_arr as $sql){
 //SDI($sql);
-				$result=DBselect($sql);
-
-				while($row=DBfetch($result)){
+				$result = DBselect($sql);
+				while($row = DBfetch($result)){
 					$idx=$row['i']-1;
 					if($idx<0) continue;
 /* --------------------------------------------------
@@ -333,60 +335,62 @@ class CChart extends CGraphDraw{
 				$this->setGraphOrientation($loc_min, $this->items[$i]['axisside']);
 				unset($row);
 			}
-			/* calculate missed points */
-			$first_idx = 0;
-			/*
-				first_idx - last existing point
-				ci - current index
-				cj - count of missed in one go
-				dx - offset to first value (count to last existing point)
-			//*/
+			$curr_data['avg_orig'] = zbx_avg($curr_data['avg']);
 
-			for($ci = 0, $cj=0; $ci < $this->sizeX; $ci++){
-				if(!isset($curr_data['count'][$ci]) || $curr_data['count'][$ci] == 0){
+// calculate missed points
+			$first_idx = 0;
+/*
+	first_idx - last existing point
+	ci - current index
+	cj - count of missed in one go
+	dx - offset to first value (count to last existing point)
+//*/
+
+			for($ci=0,$cj=0; $ci < $this->sizeX; $ci++){
+				if(!isset($curr_data['count'][$ci]) || ($curr_data['count'][$ci] == 0)){
 					$curr_data['count'][$ci] = 0;
 					$curr_data['shift_min'][$ci] = 0;
 					$curr_data['shift_max'][$ci] = 0;
 					$curr_data['shift_avg'][$ci] = 0;
 					$cj++;
+					continue;
 				}
-				else if($cj > 0){
-					$dx = $cj + 1;
 
-					$first_idx = $ci - $dx;
+//				if(($cj == 0) || ($this->type != GRAPH_TYPE_STACKED)){
+//					$cj = 0;
+				if($cj == 0){
+					continue;
+				}
 
-					if($first_idx < 0)	$first_idx = $ci; // if no data FROM start of graph get current data as first data
+				$dx = $cj + 1;
+				$first_idx = $ci - $dx;
 
-					for(;$cj > 0; $cj--){
-						if(($dx < ($this->sizeX/20)) && ($this->type == GRAPH_TYPE_STACKED)){
-							$curr_data['count'][$ci - ($dx - $cj)] = 1;
+				if($first_idx < 0)	$first_idx = $ci; // if no data FROM start of graph get current data as first data
+
+				for(;$cj > 0; $cj--){
+					if(($dx < ($this->sizeX/20)) && ($this->type == GRAPH_TYPE_STACKED)){
+						$curr_data['count'][$ci - ($dx - $cj)] = 1;
+					}
+
+					foreach(array('clock','min','max','avg') as $var_name){
+						$var = &$curr_data[$var_name];
+
+						if($first_idx == $ci && $var_name == 'clock'){
+							$var[$ci - ($dx - $cj)] = $var[$first_idx] - (($p / $this->sizeX) * ($dx - $cj));
+							continue;
 						}
 
-						foreach(array('clock','min','max','avg') as $var_name){
-							$var = &$curr_data[$var_name];
-
-							if($first_idx == $ci && $var_name == 'clock'){
-								$var[$ci - ($dx - $cj)] = $var[$first_idx] - (($p / $this->sizeX) * ($dx - $cj));
-								continue;
-							}
-
-							$dy = $var[$ci] - $var[$first_idx];
-							$var[$ci - ($dx - $cj)] = bcadd($var[$first_idx] , bcdiv(($cj * $dy) , $dx));
-						}
+						$dy = $var[$ci] - $var[$first_idx];
+						$var[$ci - ($dx - $cj)] = bcadd($var[$first_idx] , bcdiv(($cj * $dy) , $dx));
 					}
 				}
 			}
 
 			if($cj > 0 && $ci > $cj){
 				$dx = $cj + 1;
-
 				$first_idx = $ci - $dx;
 
 				for(;$cj > 0; $cj--){
-
-//					if($dx < ($this->sizeX/20))			//($this->type == GRAPH_TYPE_STACKED)
-//						$curr_data['count'][$first_idx + ($dx - $cj)] = 1;
-
 					foreach(array('clock','min','max','avg') as $var_name){
 						$var = &$curr_data[$var_name];
 
@@ -398,11 +402,11 @@ class CChart extends CGraphDraw{
 					}
 				}
 			}
-			/* end of missed points calculation */
+//*/
+// end of missed points calculation
 		}
 
-		/* calculte shift for stacked graphs */
-
+// calculte shift for stacked graphs
 		if($this->type == GRAPH_TYPE_STACKED){
 			for($i=1; $i<$this->num; $i++){
 				$curr_data = &$this->data[$this->items[$i]['itemid']][$this->items[$i]['calc_type']];
@@ -445,12 +449,13 @@ class CChart extends CGraphDraw{
 		$cnt = 0;
 
 		foreach($this->items as $inum => $item){
-			$sql = 'SELECT distinct tr.triggerid,tr.expression,tr.priority, tr.value '.
-					' FROM triggers tr,functions f,items i'.
+			$sql = 'SELECT DISTINCT h.host, tr.description, tr.triggerid, tr.expression, tr.priority, tr.value '.
+					' FROM triggers tr,functions f,items i, hosts h '.
 					' WHERE tr.triggerid=f.triggerid '.
 						" AND f.function IN ('last','min','avg','max') ".
 						' AND tr.status='.TRIGGER_STATUS_ENABLED.
 						' AND i.itemid=f.itemid '.
+						' AND h.hostid=i.hostid '.
 						' AND f.itemid='.$item['itemid'].
 					' ORDER BY tr.priority';
 			$db_triggers = DBselect($sql);
@@ -474,18 +479,20 @@ class CChart extends CGraphDraw{
 
 //				if($val <= $minY || $val >= $maxY)	continue;
 //SDI($item['itemid']);
-				$color = 'Priority';
-				if($trigger['value'] == TRIGGER_VALUE_TRUE){
-					if($trigger['priority'] == 5)		$color = 'Priority Disaster';
-					else if($trigger['priority'] == 4)	$color = 'Priority High';
-					else if($trigger['priority'] == 3)	$color = 'Priority Average';
+				switch($trigger['priority']){
+					case TRIGGER_SEVERITY_DISASTER:	$color = 'Priority Disaster'; break;
+					case TRIGGER_SEVERITY_HIGH: $color = 'Priority High'; break;
+					case TRIGGER_SEVERITY_AVERAGE: $color = 'Priority Average'; break;
+					case TRIGGER_SEVERITY_WARNING: $color = 'Priority Warning'; break;
+					case TRIGGER_SEVERITY_INFORMATION: $color = 'Priority Information'; break;
+					default: $color = 'Priority';
 				}
 
 				array_push($this->triggers,array(
 					'skipdraw' => ($val <= $minY || $val >= $maxY),
 					'y' => $this->sizeY - (($val-$minY) / ($maxY-$minY)) * $this->sizeY + $this->shiftY,
 					'color' => $color,
-					'description' => 'trigger: '.expand_trigger_description($trigger['triggerid']),
+					'description' => S_TRIGGER.': '.expand_trigger_description_by_data($trigger),
 					'constant' => '['.$arr[2].' '.$arr[3].$arr[4].']'
 					));
 				++$cnt;
@@ -637,9 +644,8 @@ class CChart extends CGraphDraw{
 		}
 
 		$maxY = null;
-		for($i=0;$i<$this->num;$i++){
-			if($this->items[$i]['axisside'] != $side)
-				continue;
+		for($i=0; $i<$this->num; $i++){
+			if($this->items[$i]['axisside'] != $side) continue;
 
 			foreach(array(GRAPH_ITEM_SIMPLE, GRAPH_ITEM_AGGREGATED) as $type){
 				if(!isset($this->data[$this->items[$i]['itemid']][$type])) continue;
@@ -672,6 +678,8 @@ class CChart extends CGraphDraw{
 				if(!isset($val)) continue;
 
 				for($ci=0; $ci < min(count($val),count($shift_val)); $ci++){
+					if($data['count'][$ci] == 0) continue;
+
 					$val[$ci] = bcadd($shift_val[$ci], $val[$ci]);
 				}
 //SDII($val);
@@ -683,7 +691,6 @@ class CChart extends CGraphDraw{
 				else{
 					$maxY = max($maxY, max($val));
 				}
-
 			}
 		}
 
@@ -735,12 +742,18 @@ class CChart extends CGraphDraw{
 				$this->m_minY[$side] = min($tmp_minY[GRAPH_YAXIS_SIDE_LEFT], 0);
 				continue;
 			}
+
 			if($this->ymax_type == GRAPH_YAXIS_TYPE_FIXED){
 				$this->m_maxY[$side] = $this->yaxismax;
 				$this->m_minY[$side] = 0;
 			}
+
 			if($this->ymin_type == GRAPH_YAXIS_TYPE_FIXED){
 				$this->m_minY[$side] = $this->yaxismin;
+
+				if(($this->ymax_type == GRAPH_YAXIS_TYPE_CALCULATED) && ($this->m_maxY[$side] < $this->m_minY[$side])){
+					$this->m_maxY[$side] = bcmul($this->m_minY[$side], 1.2);
+				}
 			}
 		}
 		
@@ -761,14 +774,14 @@ class CChart extends CGraphDraw{
 //------
 
 // CALC interval
-		$col_interval = ($this->gridPixelsVert*($this->m_maxY[$side] - $this->m_minY[$side]))/$this->sizeY;
+		$columnInterval = ($this->gridPixelsVert*($this->m_maxY[$side] - $this->m_minY[$side]))/$this->sizeY;
 		$max = $this->m_maxY[$side];
 
 		$dist = bcmul(5, bcpow(10, 18));
 		
 		$interval = 0;
 		foreach($intervals as $num => $int){
-			$t = abs($int - $col_interval);
+			$t = abs($int - $columnInterval);
 
 			if($t<$dist){
 				$dist = $t;
@@ -781,7 +794,7 @@ class CChart extends CGraphDraw{
 		$this->m_minY[$side] = bcmul(floor(bcdiv($this->m_minY[$side], $interval)), $interval);
 		$this->m_maxY[$side] = bcmul(ceil(bcdiv($this->m_maxY[$side], $interval)), $interval);
 //--------------------
-//SDI($this->m_minY[$side].' - '.$this->m_maxY[$side].' : '.$interval);
+
 		$this->gridLinesCount[$side] = ceil(($this->m_maxY[$side] - $this->m_minY[$side]) / $interval);
 
 // we add 1 interval so max Y woun't be at most top
@@ -790,21 +803,13 @@ class CChart extends CGraphDraw{
 		}
 
 		$this->m_maxY[$side] = bcadd($this->m_minY[$side], bcmul($interval, $this->gridLinesCount[$side]));
+		$this->gridStep[$side] = $interval;
 
-// division by zero
-		$diff_val = ($this->m_maxY[$side] - $this->m_minY[$side]);
-		if($diff_val == 0) $diff_val = 1;
-
-		$intervalX = ($interval * $this->sizeY) / $diff_val;
-//SDII(array($this->m_maxY[$side],$tmp_maxY[$side]));
-
-//SDI($this->m_maxY[$other_side].' - '.$this->m_minY[$other_side]);
 		if(isset($this->axis_valuetype[$other_side])){
 			$dist = ($this->m_maxY[$other_side] - $this->m_minY[$other_side]);
 			$interval = 1;
 
 			foreach($intervals as $num => $int){
-//SDI($dist.' < '.bcmul($this->gridLinesCount[$side],$int));
 				if($dist < bcmul($this->gridLinesCount[$side],$int)){
 					$interval = $int;
 					break;
@@ -821,7 +826,6 @@ class CChart extends CGraphDraw{
 				$dist = bcsub($this->m_maxY[$other_side],$this->m_minY[$other_side]);
 				$interval = 0;
 				foreach($intervals as $num => $int){
-//SDI($dist.' < '.bcmul($this->gridLinesCount[$side],$int));
 					if($dist < bcmul($this->gridLinesCount[$side],$int)){
 						$interval = $int;
 						break;
@@ -836,32 +840,47 @@ class CChart extends CGraphDraw{
 
 			$this->gridLinesCount[$other_side] = $this->gridLinesCount[$side];
 			$this->m_maxY[$other_side] = $this->m_minY[$other_side] + bcmul($interval,$this->gridLinesCount[$other_side]);
-//SDI($this->m_minY[$other_side].' - '.$this->m_maxY[$other_side].' : '.$interval.' x '.$this->gridLinesCount[$side]);
+
+			$this->gridStep[$other_side] = $interval;
 		}
 
 		$sides = array(GRAPH_YAXIS_SIDE_LEFT,GRAPH_YAXIS_SIDE_RIGHT);
-		foreach($sides as $snum => $side){
-			if(!isset($this->axis_valuetype[$side])) continue;
+		foreach($sides as $snum => $graphSide){
+			if(!isset($this->axis_valuetype[$graphSide])) continue;
 
 			if($this->type == GRAPH_TYPE_STACKED){
-				$this->m_minY[$side] = min($tmp_minY[GRAPH_YAXIS_SIDE_LEFT], 0);
+				$this->m_minY[$graphSide] = min($tmp_minY[GRAPH_YAXIS_SIDE_LEFT], 0);
 			}
 
 			if($this->ymax_type == GRAPH_YAXIS_TYPE_FIXED){
-				$this->m_maxY[$side] = $this->yaxismax;
-				$this->m_minY[$side] = 0;
+				$this->m_maxY[$graphSide] = $this->yaxismax;
+				$this->m_minY[$graphSide] = 0;
 			}
 			else if($this->ymax_type == GRAPH_YAXIS_TYPE_ITEM_VALUE){
-				$this->m_maxY[$side] = $tmp_maxY[$side];
+				$this->m_maxY[$graphSide] = $tmp_maxY[$graphSide];
 			}
 
 			if($this->ymin_type == GRAPH_YAXIS_TYPE_FIXED){
-				$this->m_minY[$side] = $this->yaxismin;
+				$this->m_minY[$graphSide] = $this->yaxismin;
 			}
 			else if($this->ymin_type == GRAPH_YAXIS_TYPE_ITEM_VALUE){
-				$this->m_minY[$side] = $tmp_minY[$side];
+				$this->m_minY[$graphSide] = $tmp_minY[$graphSide];
 			}
 		}
+
+// division by zero
+		$diff_val = ($this->m_maxY[$side] - $this->m_minY[$side]);
+		if($diff_val == 0) $diff_val = 1;
+		$this->gridStepX[$side] = ($this->gridStep[$side] * $this->sizeY) / $diff_val;
+
+		if(isset($this->axis_valuetype[$other_side])){
+			$diff_val = ($this->m_maxY[$other_side] - $this->m_minY[$other_side]);
+			if($diff_val == 0) $diff_val = 1;
+			$this->gridStepX[$other_side] = ($this->gridStep[$other_side] * $this->sizeY) / $diff_val;
+		}
+
+//SDI($this->gridStep);
+//SDI($this->gridStepX);
 	}
 
 	private function calcTimeInterval(){
@@ -881,10 +900,13 @@ class CChart extends CGraphDraw{
 			array('main'=> 86400,'sub' => 43200),			// 12 hours
 			array('main'=> 604800,'sub' => 86400),			// 1 day
 			array('main'=> 1209600,'sub' => 604800),		// 1 week
-			array('main'=> 1209600,'sub' => 1209600)		// 2 weeks
+			array('main'=> 2419200,'sub' => 1209600),		// 2 weeks
+			array('main'=> 4838400,'sub' => 2419200),		// 4 weeks
+			array('main'=> 9676800,'sub' => 4838400),		// 8 weeks
+			array('main'=> 19353600,'sub' => 9676800)		// 16 weeks
 		);
 
-		$dist = 604800; //def week;
+		$dist = 19353600; //def week;
 		$sub_interval = 0;
 		$main_interval = 0;
 
@@ -1081,23 +1103,32 @@ class CChart extends CGraphDraw{
 	private function drawVerticalGrid(){
 		$hline_count = round($this->sizeY / $this->gridPixels);
 
-		if($this->yaxisleft)
+		if($this->yaxisleft){
 			$tmp_hlines = $this->gridLinesCount[GRAPH_YAXIS_SIDE_LEFT];
-		else
+			$stepX = $this->gridStepX[GRAPH_YAXIS_SIDE_LEFT];
+		}
+		else{
 			$tmp_hlines = $this->gridLinesCount[GRAPH_YAXIS_SIDE_RIGHT];
+			$stepX = $this->gridStepX[GRAPH_YAXIS_SIDE_RIGHT];
+		}
 
-		if($tmp_hlines < $hline_count)
-			$hline_count = $tmp_hlines * 2 - 1;
-		else
-			$hline_count = $tmp_hlines - 1;
+		if($tmp_hlines < $hline_count){
+			$hline_count = $tmp_hlines * 2;
+			$stepX = $stepX / 2;
+		}
+		else{
+			$hline_count = $tmp_hlines;
+		}
 
+		for($i=1; $i<$hline_count; $i++){
+			$y = $stepX * $i;
+			if($y >= $this->sizeY) continue;
 
-		for($i=1; $i<=$hline_count; $i++){
 			dashedline($this->im,
 					$this->shiftXleft,
-					$i*($this->sizeY/($hline_count+1))+$this->shiftY,
+					$this->sizeY - $y+$this->shiftY,
 					$this->sizeX+$this->shiftXleft,
-					$i*($this->sizeY/($hline_count+1))+$this->shiftY,
+					$this->sizeY - $y+$this->shiftY,
 					$this->getColor($this->graphtheme['maingridcolor'],0)
 				);
 		}
@@ -1132,7 +1163,10 @@ class CChart extends CGraphDraw{
 			$new_pos = $i*$intervalX+$offsetX;
 
 // DayLightSave
-			if(($interval > 3600) && date('I',$this->to_time) == date('I',$new_time)) $new_time+=$this->diffTZ;
+			if($interval > 3600){
+				$tz = date('Z',$this->from_time) - date('Z',$new_time);
+				$new_time+=$tz;
+			}
 
 // MAIN Interval Checks
 			if(($interval < 3600) && (date('i',$new_time) == 0)){
@@ -1167,11 +1201,11 @@ class CChart extends CGraphDraw{
 			if($main_intervalX < floor(($main_interval/$interval)*$intervalX)) continue;
 			else if($main_intervalX < (ceil($main_interval/$interval + 1)*$test_dims['width'])) continue;
 
-			if($interval == 86400) $date_format = 'D';
-			else if($interval > 86400) $date_format = 'd.m';
-			else if($interval < 86400) $date_format = 'H:i';
+			if($interval == 86400) $date_format = S_CCHARTS_TIMELINE_DAYS_FORMAT;
+			else if($interval > 86400) $date_format = S_CCHARTS_TIMELINE_MONTHDAYS_FORMAT;
+			else if($interval < 86400) $date_format = S_CCHARTS_TIMELINE_HOURS_FORMAT;
 
-			$str = date($date_format, $new_time);
+			$str = zbx_date2str($date_format, $new_time);
 			$dims = imageTextSize(7, 90, $str);
 
 			imageText($this->im,
@@ -1186,7 +1220,7 @@ class CChart extends CGraphDraw{
 
 // First && Last
 // Start
-		$str = date('d.m H:i',$this->stime);
+		$str = zbx_date2str(S_CCHARTS_TIMELINE_START_DATE_FORMAT,$this->stime);
 		$dims = imageTextSize(8, 90, $str);
 		imageText($this->im,
 					8,
@@ -1200,7 +1234,7 @@ class CChart extends CGraphDraw{
 // End
 		$endtime = $this->to_time;// - $this->diffTZ;
 
-		$str = date('d.m H:i',$endtime);
+		$str = zbx_date2str(S_CCHARTS_TIMELINE_END_DATE_FORMAT,$endtime);
 		$dims = imageTextSize(8, 90, $str);
 		imageText($this->im,
 					8,
@@ -1214,18 +1248,17 @@ class CChart extends CGraphDraw{
 
 	private function drawMainPeriod($new_time, $new_pos){
 		if(date('H',$new_time) == 0){
-
-			if(date('Hi', $new_time) == 0) $date_format = 'd.m';
-			else $date_format = 'd.m H:i';
+			if(date('Hi', $new_time) == 0) $date_format = S_CCHARTS_TIMELINE_MAINPERIOD_MONTHDAYS_FORMAT;
+			else $date_format = S_CCHARTS_TIMELINE_MAINPERIOD_FULL_DAY_TIME_FORMAT;
 
 			$color = $this->graphtheme['highlightcolor'];
 		}
 		else{
-			$date_format = 'H:i';
+			$date_format = S_CCHARTS_TIMELINE_MAINPERIOD_HOURS_FORMAT;
 			$color = $this->graphtheme['highlightcolor'];
 		}
 
-		$str = date($date_format, $new_time);
+		$str = zbx_date2str($date_format, $new_time);
 		$dims = imageTextSize(8, 90, $str);
 
 		imageText($this->im,
@@ -1288,25 +1321,39 @@ class CChart extends CGraphDraw{
 				$unitsLong
 			);
 		}
-		
+
+		$step = $this->gridStep[GRAPH_YAXIS_SIDE_LEFT];
 		$hstr_count = $this->gridLinesCount[GRAPH_YAXIS_SIDE_LEFT];
 		for($i=0; $i<=$hstr_count; $i++){
 // division by zero
 			$hstr_count = ($hstr_count == 0)?1:$hstr_count;
-			$val = bcadd(bcdiv(bcmul(bcdiv(bcmul($this->sizeY, $i), $hstr_count), bcsub($maxY, $minY)), $this->sizeY), $minY);
-			$str = convert_units($val, $units, ITEM_CONVERT_NO_UNITS);
 
+			$val = $i * $step + $minY;
+			if(bccomp(bcadd($val, bcdiv($step,2)), $maxY) == 1) continue;
+
+			$str = convert_units($val, $units, ITEM_CONVERT_NO_UNITS);
 			$dims = imageTextSize(8, 0, $str);
 
 			imageText($this->im,
 				8,
 				0,
 				$this->shiftXleft - $dims['width'] - 6,
-				$this->sizeY-$this->sizeY*$i/$hstr_count+$this->shiftY + 4,
+				$this->sizeY - $this->gridStepX[GRAPH_YAXIS_SIDE_LEFT]*$i + $this->shiftY  + 4,
 				$this->getColor($this->graphtheme['textcolor'], 0),
 				$str
 			);
 		}
+
+		$str = convert_units($maxY, $units, ITEM_CONVERT_NO_UNITS);
+		$dims = imageTextSize(8, 0, $str);
+		imageText($this->im,
+			8,
+			0,
+			$this->shiftXleft - $dims['width'] - 6,
+			$this->shiftY  + 4,
+			$this->getColor($this->graphtheme['textcolor'], 0),
+			$str
+		);
 
 		if(($this->zero[GRAPH_YAXIS_SIDE_LEFT] != ($this->sizeY+$this->shiftY)) && ($this->zero[GRAPH_YAXIS_SIDE_LEFT] != $this->shiftY)){
 			imageline($this->im,
@@ -1363,23 +1410,35 @@ class CChart extends CGraphDraw{
 		}
 
 
+		$step = $this->gridStep[GRAPH_YAXIS_SIDE_RIGHT];
 		$hstr_count = $this->gridLinesCount[GRAPH_YAXIS_SIDE_RIGHT];
 		for($i=0;$i<=$hstr_count;$i++){
 			if($hstr_count == 0) continue;
 
-			$val = bcadd(bcdiv(bcmul(bcdiv(bcmul($this->sizeY, $i), $hstr_count), bcsub($maxY, $minY)), $this->sizeY), $minY);
+			$val = $i * $step + $minY;
+			if(bccomp(bcadd($val, bcdiv($step,2)), $maxY) == 1) continue;
+
 			$str = convert_units($val, $units, ITEM_CONVERT_NO_UNITS);
 
 			imageText($this->im,
 				8,
 				0,
 				$this->sizeX+$this->shiftXleft+12,
-				$this->sizeY-$this->sizeY*$i/$hstr_count+$this->shiftY + 4,
+				$this->sizeY - $this->gridStepX[GRAPH_YAXIS_SIDE_RIGHT]*$i + $this->shiftY + 4,
 				$this->getColor($this->graphtheme['textcolor'], 0),
 				$str
 			);
 		}
-		
+
+		$str = convert_units($maxY, $units, ITEM_CONVERT_NO_UNITS);
+		imageText($this->im,
+			8,
+			0,
+			$this->sizeX+$this->shiftXleft+12,
+			$this->shiftY + 4,
+			$this->getColor($this->graphtheme['textcolor'], 0),
+			$str
+		);
 
 		if(($this->zero[GRAPH_YAXIS_SIDE_RIGHT] != $this->sizeY+$this->shiftY) &&
 			($this->zero[GRAPH_YAXIS_SIDE_RIGHT] != $this->shiftY))
@@ -1417,7 +1476,8 @@ class CChart extends CGraphDraw{
 			$this->shiftY,
 			$this->sizeX+$this->shiftXleft-2,	// -2 border
 			$this->sizeY+$this->shiftY,
-			$this->getColor($this->graphtheme['noneworktimecolor'], 0));
+			$this->getColor($this->graphtheme['noneworktimecolor'], 0)
+		);
 
 		$now = time();
 		if(isset($this->stime)){
@@ -1434,13 +1494,14 @@ class CChart extends CGraphDraw{
 
 		$start = find_period_start($periods,$from);
 		$end = -1;
-		while($start < $max_time && $start > 0){
+		while(($start < $max_time) && ($start > 0)){
 			$end = find_period_end($periods,$start,$max_time);
 
 			$x1 = round((($start-$from)*$this->sizeX)/$this->period) + $this->shiftXleft;
 			$x2 = ceil((($end-$from)*$this->sizeX)/$this->period) + $this->shiftXleft;
 
-			//draw rectangle
+
+//draw rectangle
 			imagefilledrectangle(
 				$this->im,
 				$x1,
@@ -1490,16 +1551,29 @@ class CChart extends CGraphDraw{
 		if($this->m_showTriggers != 1) return;
 //		if($this->num != 1) return; // skip multiple graphs
 
+		$opposite = hex2rgb(GRAPH_TRIGGER_LINE_OPPOSITE_COLOR);
+		$oppColor = imagecolorallocate($this->im, $opposite[0], $opposite[1], $opposite[2]);
 		foreach($this->triggers as $tnum => $trigger){
 			if($trigger['skipdraw']) continue;
 
+			$triggerColor = $this->getColor($trigger['color']);
+			$lineStyle = Array($triggerColor, $triggerColor, $triggerColor, $triggerColor, $triggerColor, $oppColor, $oppColor, $oppColor);
+
+//			SDI($trigger['color']);
 			dashedline(
 				$this->im,
 				$this->shiftXleft,
 				$trigger['y'],
 				$this->sizeX+$this->shiftXleft,
 				$trigger['y'],
-				$this->getColor($trigger['color']));
+				$lineStyle);
+			dashedline(
+				$this->im,
+				$this->shiftXleft,
+				$trigger['y']+1,
+				$this->sizeX+$this->shiftXleft,
+				$trigger['y']+1,
+				$lineStyle);
 		}
 	}
 
@@ -1559,9 +1633,9 @@ class CChart extends CGraphDraw{
 				$legend->addCell($colNum, array('text' => $item_caption));
 				$legend->addCell($colNum, array('text' => '['.$fnc_name.']'));
 				$legend->addCell($colNum, array('text' => convert_units($this->getLastValue($i),$this->items[$i]['units'],ITEM_CONVERT_NO_UNITS), 'align'=> 2));
-				$legend->addCell($colNum, array('text' => convert_units(min($data['min']),$this->items[$i]['units']),ITEM_CONVERT_NO_UNITS, 'align'=> 2));
-				$legend->addCell($colNum, array('text' => convert_units(zbx_avg($data['avg']),$this->items[$i]['units'],ITEM_CONVERT_NO_UNITS), 'align'=> 2));
-				$legend->addCell($colNum, array('text' => convert_units(max($data['max']),$this->items[$i]['units'],ITEM_CONVERT_NO_UNITS), 'align'=> 2));
+				$legend->addCell($colNum, array('text' => convert_units(min($data['min']),$this->items[$i]['units'], ITEM_CONVERT_NO_UNITS), 'align'=> 2));
+				$legend->addCell($colNum, array('text' => convert_units($data['avg_orig'],$this->items[$i]['units'], ITEM_CONVERT_NO_UNITS), 'align'=> 2));
+				$legend->addCell($colNum, array('text' => convert_units(max($data['max']),$this->items[$i]['units'], ITEM_CONVERT_NO_UNITS), 'align'=> 2));
 			}
 			else{
 				$legend->addCell($colNum,array('text' => $item_caption));
@@ -1593,7 +1667,7 @@ class CChart extends CGraphDraw{
 
 		$legend->draw();
 
-		if($this->sizeY < 100){
+		if($this->sizeY < 120){
 			return true;
 		}
 
@@ -1689,6 +1763,26 @@ class CChart extends CGraphDraw{
 		$legend->draw();
 	}
 
+	protected function limitToBounds(&$value1, &$value2, $min, $max, $drawtype){
+// Fixes graph out of bounds problem
+		if( (($value1 > ($max+$min)) && ($value2 > ($max+$min))) || (($value1 < $min) && ($value2 < $min)) ){
+			if($drawtype != GRAPH_ITEM_DRAWTYPE_FILLED_REGION) return false;
+		}
+
+		$y_first = (($value1 > ($max+$min)) || ($value1 < $min));
+		$y_second = (($value2 > ($max+$min)) || ($value2 < $min));
+
+		if($y_first){
+			$value1 = ($value1 > ($max+$min))?($max+$min):$min;
+		}
+
+		if($y_second){
+			$value2 = ($value2 > ($max+$min))?($max+$min):$min;
+		}
+//--------
+	return true;
+	}
+
 	protected function drawElement(&$data, $from, $to, $minX, $maxX, $minY, $maxY, $drawtype, $max_color, $avg_color, $min_color, $minmax_color, $calc_fnc, $axisside){
 		if(!isset($data['max'][$from]) || !isset($data['max'][$to])) return;
 
@@ -1745,26 +1839,28 @@ class CChart extends CGraphDraw{
 				$shift_to	= $shift_min_to;
 				break;
 			case CALC_FNC_ALL:
+// MAX
+				$y1x = (($y1max > ($this->sizeY+$this->shiftY)) || ($y1max < $this->shiftY));
+				$y2x = (($y2max > ($this->sizeY+$this->shiftY)) || ($y2max < $this->shiftY));
+
+				if($y1x) $y1max = ($y1max > ($this->sizeY+$this->shiftY))?($this->sizeY+$this->shiftY):$this->shiftY;
+				if($y2x) $y2max = ($y2max > ($this->sizeY+$this->shiftY))?($this->sizeY+$this->shiftY):$this->shiftY;
+//--
+// MIN
+				$y1n = (($y1min > ($this->sizeY+$this->shiftY)) || ($y1min < $this->shiftY));
+				$y2n = (($y2min > ($this->sizeY+$this->shiftY)) || ($y2min < $this->shiftY));
+
+				if($y1n) $y1min = ($y1min > ($this->sizeY+$this->shiftY))?($this->sizeY+$this->shiftY):$this->shiftY;
+				if($y2n) $y2min = ($y2min > ($this->sizeY+$this->shiftY))?($this->sizeY+$this->shiftY):$this->shiftY;
+//--
 				$a[0] = $x1;		$a[1] = $y1max;
 				$a[2] = $x1;		$a[3] = $y1min;
 				$a[4] = $x2;		$a[5] = $y2min;
 				$a[6] = $x2;		$a[7] = $y2max;
 //SDI('2: '.$x2.' - '.$x1.' : '.$y2min.' - '.$y1min);
-				if($drawtype == GRAPH_ITEM_DRAWTYPE_BOLD_DOT){
-					imagefilledrectangle($this->im,$x1,$y1max-1,$x1+1,$y1max,$max_color);
-					imagefilledrectangle($this->im,$x1,$y1min-1,$x1+1,$y1min,$min_color);
-				}
-				else{
-					imagefilledpolygon($this->im,$a,4,$minmax_color);
-					imageline($this->im,$x1,$y1max,$x2,$y2max,$max_color);
-					imageline($this->im,$x1,$y1min,$x2,$y2min,$min_color);
-				}
-
-				/* don't use break, avg must be drawed in this statement */
-				// break;
+// don't use break, avg must be drawed in this statement
 			case CALC_FNC_AVG:
-				/* don't use break, avg must be drawed in this statement */
-				// break;
+// don't use break, avg must be drawed in this statement
 			default:
 				$y1 = $y1avg;
 				$y2 = $y2avg;
@@ -1779,46 +1875,46 @@ class CChart extends CGraphDraw{
 		$y2_shift	= $zero - $shift_to/$unit2px;//*/
 
 
-// Fixes graph out of bounds problem
-		if( (($y1 > ($this->sizeY+$this->shiftY)) && ($y2 > ($this->sizeY+$this->shiftY))) || (($y1 < $this->shiftY) && ($y2 < $this->shiftY)) ){
-			if($drawtype == GRAPH_ITEM_DRAWTYPE_FILLED_REGION){
-				if($y1 > ($this->sizeY+$this->shiftY)) $y1 = $this->sizeY+$this->shiftY;
-				if($y2 > ($this->sizeY+$this->shiftY)) $y2 = $this->sizeY+$this->shiftY;
+		if(!$this->limitToBounds($y1, $y2, $this->shiftY, $this->sizeY, $drawtype)) return true;
+		if(!$this->limitToBounds($y1_shift, $y2_shift, $this->shiftY, $this->sizeY, $drawtype)) return true;
 
-				if($y1 < ($this->sizeY+$this->shiftY)) $y1 = $this->shiftY;
-				if($y2 < ($this->sizeY+$this->shiftY)) $y2 = $this->shiftY;
-			}
-			else{
-				return true;
-			}
-		}
-
-		$y_first = !(($y1 > ($this->sizeY+$this->shiftY)) || ($y1 < $this->shiftY));
-		$y_second = !(($y2 > ($this->sizeY+$this->shiftY)) || ($y2 < $this->shiftY));
-
-		if(!$y_first){
-			$y1 = ($y1 > ($this->sizeY+$this->shiftY))?($this->sizeY+$this->shiftY):$this->shiftY;
-		}
-		else if(!$y_second){
-			$y2 = ($y2 > ($this->sizeY+$this->shiftY))?($this->sizeY+$this->shiftY):$this->shiftY;
-		}
-//--------
 
 // draw main line
 		switch($drawtype){
 			case GRAPH_ITEM_DRAWTYPE_BOLD_LINE:
+				if($calc_fnc == CALC_FNC_ALL){
+					imagefilledpolygon($this->im,$a,4,$minmax_color);
+					if(!$y1x || !$y2x){
+						imageline($this->im,$x1+1,$y1max,$x2+1,$y2max,$max_color);
+						imageline($this->im,$x1,$y1max,$x2,$y2max,$max_color);
+					}
+
+					if(!$y1n || !$y2n){
+						imageline($this->im,$x1-1,$y1min,$x2-1,$y2min,$min_color);
+						imageline($this->im,$x1,$y1min,$x2,$y2min,$min_color);
+					}
+				}
+
 				imageline($this->im,$x1,$y1+1,$x2,$y2+1,$avg_color);
-				// break; /* don't use break, must be drawed line also */
+				imageline($this->im,$x1,$y1,$x2,$y2,$avg_color);
+				break;
 			case GRAPH_ITEM_DRAWTYPE_LINE:
 //SDI(array($this->im,$x1,$y1,$x2,$y2,$avg_color));
+				if($calc_fnc == CALC_FNC_ALL){
+					imagefilledpolygon($this->im,$a,4,$minmax_color);
+					if(!$y1x || !$y2x) imageline($this->im,$x1,$y1max,$x2,$y2max,$max_color);
+					if(!$y1n || !$y2n) imageline($this->im,$x1,$y1min,$x2,$y2min,$min_color);
+				}
+
 				imageline($this->im,$x1,$y1,$x2,$y2,$avg_color);
 				break;
 			case GRAPH_ITEM_DRAWTYPE_FILLED_REGION:
+//--
 				$a[0] = $x1;		$a[1] = $y1;
 				$a[2] = $x1;		$a[3] = $y1_shift;
 				$a[4] = $x2;		$a[5] = $y2_shift;
 				$a[6] = $x2;		$a[7] = $y2;
-//SDI($a);
+
 				imagefilledpolygon($this->im,$a,4,$avg_color);
 //				imageline($this->im,$x1,$y1,$x2,$y2,$this->getShadow('333333',50));
 				break;
@@ -1902,7 +1998,7 @@ class CChart extends CGraphDraw{
 			if($this->graphOrientation[GRAPH_YAXIS_SIDE_LEFT] == '-') $this->m_maxY[GRAPH_YAXIS_SIDE_LEFT] = 0;
 			else if($this->m_minY[GRAPH_YAXIS_SIDE_LEFT] == 0){
 				$this->m_maxY[GRAPH_YAXIS_SIDE_LEFT] = 1;
-				$this->skipLeftScale = 1;
+//				$this->skipLeftScale = 1;
 			}
 			else $this->m_minY[GRAPH_YAXIS_SIDE_LEFT] = 0;
 		}
@@ -1917,7 +2013,7 @@ class CChart extends CGraphDraw{
 			if($this->graphOrientation[GRAPH_YAXIS_SIDE_RIGHT] == '-') $this->m_maxY[GRAPH_YAXIS_SIDE_RIGHT] = 0;
 			else if($this->m_minY[GRAPH_YAXIS_SIDE_RIGHT] == 0){
 				$this->m_maxY[GRAPH_YAXIS_SIDE_RIGHT] = 1;
-				$this->skipRightScale = 1;
+//				$this->skipRightScale = 1;
 			}
 			else $this->m_minY[GRAPH_YAXIS_SIDE_RIGHT] = 0;
 		}
@@ -1928,7 +2024,6 @@ class CChart extends CGraphDraw{
 			else $this->m_minY[GRAPH_YAXIS_SIDE_RIGHT] = 0;
 		}
 //*/
-
 		$this->calcMinMaxInterval();
 
 		$this->updateShifts();
@@ -1938,7 +2033,12 @@ class CChart extends CGraphDraw{
 
 		$this->fullSizeX = $this->sizeX+$this->shiftXleft+$this->shiftXright+1;
 		$this->fullSizeY = $this->sizeY+$this->shiftY+$this->legendOffsetY;
-		$this->fullSizeY += 14*($this->num+1+(($this->sizeY < 120)?0:count($this->triggers)))+8;
+
+		if($this->drawLegend){
+			$trCount = $this->m_showTriggers?count($this->triggers):0;
+			$this->fullSizeY += 14 * ($this->num+1+(($this->sizeY < 120)?0:count($this->triggers))) + 8;
+		}
+
 
 		foreach($this->percentile as $side => $percentile){
 			if(($percentile['percent']>0) && $percentile['value']){
@@ -1968,6 +2068,7 @@ class CChart extends CGraphDraw{
 //-----*/
 
 		$maxX = $this->sizeX;
+
 
 // For each metric
 		for($item = 0; $item < $this->num; $item++){
@@ -2011,6 +2112,7 @@ class CChart extends CGraphDraw{
 
 // For each X
 			$draw = true;
+			$prevDraw = true;
 			for($i = 1, $j = 0; $i < $maxX; $i++){  // new point
 				if(($data['count'][$i] == 0) && ($i != ($maxX-1))) continue;
 
@@ -2062,12 +2164,14 @@ class CChart extends CGraphDraw{
 		$this->drawLeftSide();
 		$this->drawRightSide();
 
-		$this->drawTriggers();
-		$this->drawPercentile();
+		if($this->drawLegend){
+			$this->drawTriggers();
+			$this->drawPercentile();
+
+			$this->drawLegend();
+		}
 
 		$this->drawLogo();
-
-		$this->drawLegend();
 
 		$end_time=getmicrotime();
 		$str=sprintf('%0.2f',(getmicrotime()-$start_time));

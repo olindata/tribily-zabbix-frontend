@@ -22,51 +22,6 @@ include_once 'include/discovery.inc.php';
 
 ?>
 <?php
-function action_accessible($actionid,$perm){
-	global $USER_DETAILS;
-
-	$result = false;
-
-	if(DBselect('select actionid from actions where actionid='.$actionid.' and '.DBin_node('actionid'))){
-		$result = true;
-
-		$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,$perm,null,get_current_nodeid(true));
-		$available_groups = get_accessible_groups_by_user($USER_DETAILS,$perm,null,get_current_nodeid(true));
-
-		$db_result = DBselect('SELECT * FROM conditions WHERE actionid='.$actionid);
-		while(($ac_data = DBfetch($db_result)) && $result){
-			if($ac_data['operator'] != 0) continue;
-
-			switch($ac_data['conditiontype']){
-				case CONDITION_TYPE_HOST_GROUP:
-					if(!isset($available_groups[$ac_data['value']])){
-						$result = false;
-					}
-					break;
-				case CONDITION_TYPE_HOST:
-				case CONDITION_TYPE_HOST_TEMPLATE:
-					if(!isset($available_hosts[$ac_data['value']])){
-						$result = false;
-					}
-					break;
-				case CONDITION_TYPE_TRIGGER:
-					$sql = 'SELECT DISTINCT t.triggerid'.
-						' FROM triggers t,items i,functions f '.
-						' WHERE t.triggerid='.$ac_data['value'].
-							' AND f.triggerid=t.triggerid'.
-							' AND i.itemid=f.itemid '.
-							' AND '.DBcondition('i.hostid',$available_hosts, true);
-
-					if(DBfetch(DBselect($sql,1))){
-						$result = false;
-					}
-					break;
-			}
-		}
-	}
-	return $result;
-}
-
 function check_permission_for_action_conditions($conditions){
 	global $USER_DETAILS;
 
@@ -147,231 +102,6 @@ function get_action_by_actionid($actionid){
 return	$result;
 }
 
-function get_operations_by_actionid($actionid){
-	$sql='SELECT * FROM operations WHERE actionid='.$actionid;
-	$result=DBselect($sql);
-
-return	$result;
-}
-
-
-// Add Action's condition
-
-function add_action_condition($actionid, $condition){
-	$conditionid = get_dbid("conditions","conditionid");
-
-	$result = DBexecute('INSERT INTO conditions (conditionid,actionid,conditiontype,operator,value)'.
-		' values ('.$conditionid.','.$actionid.','.
-			$condition['type'].','.
-			$condition['operator'].','.
-			zbx_dbstr($condition['value']).
-		')');
-
-	if(!$result)
-		return $result;
-
-	return $conditionid;
-}
-
-function add_action_operation($actionid, $operation){
-	$operationid = get_dbid('operations','operationid');
-
-	if(!isset($operation['default_msg'])) $operation['default_msg'] = 0;
-	if(!isset($operation['opconditions'])) $operation['opconditions'] = array();
-
-	$result = DBexecute('INSERT INTO operations (operationid, actionid, operationtype, object, objectid, shortdata, longdata, esc_period, esc_step_from, esc_step_to, default_msg, evaltype)'.
-		' values('.$operationid.','.$actionid.','.
-			$operation['operationtype'].','.
-			$operation['object'].','.
-			$operation['objectid'].','.
-			zbx_dbstr($operation['shortdata']).','.
-			zbx_dbstr($operation['longdata']).','.
-			$operation['esc_period'].','.
-			$operation['esc_step_from'].','.
-			$operation['esc_step_to'].','.
-			$operation['default_msg'].','.
-			$operation['evaltype'].
-		')');
-	if(!$result)
-		return $result;
-
-	foreach($operation['opconditions'] as $num => $opcondition){
-		$result &= add_operation_condition($operationid, $opcondition);
-	}
-
-	$result &= add_operation_mediatype($operationid, $operation['mediatypeid']);
-
-	return $operationid;
-}
-
-// Add operation condition
-function add_operation_condition($operationid, $opcondition){
-	$opconditionid = get_dbid("opconditions","opconditionid");
-
-	$result = DBexecute('INSERT INTO opconditions (opconditionid,operationid,conditiontype,operator,value)'.
-		' values ('.$opconditionid.','.
-			$operationid.','.
-			$opcondition['conditiontype'].','.
-			$opcondition['operator'].','.
-			zbx_dbstr($opcondition['value']).
-		')');
-
-	if(!$result)
-		return $result;
-
-return $opconditionid;
-}
-
-// Add operation mediatype
-function add_operation_mediatype($operationid, $mediatypeid){
-	if (0 == $mediatypeid)
-		return;
-
-	$opmediatypeid = get_dbid('opmediatypes', 'opmediatypeid');
-
-	$result = DBexecute('INSERT INTO opmediatypes (opmediatypeid,operationid,mediatypeid)'.
-		' values ('.$opmediatypeid.','.$operationid.','.$mediatypeid.')');
-
-	if(!$result)
-		return $result;
-
-return $opmediatypeid;
-}
-
-// Add Action
-function add_action($name, $eventsource, $esc_period, $def_shortdata, $def_longdata, $recovery_msg, $r_shortdata, $r_longdata, $evaltype, $status, $conditions, $operations){
-	if(!is_array($conditions) || count($conditions) == 0){
-		/*
-		error(S_NO_CONDITIONS_DEFINED);
-		return false;
-		*/
-	}
-	else{
-		if(!check_permission_for_action_conditions($conditions))
-			return false;
-
-		foreach($conditions as $condition)
-			if( !validate_condition($condition['type'], $condition['value']) ) return false;
-	}
-
-	if(!is_array($operations) || count($operations) == 0){
-		error(S_NO_OPERATIONS_DEFINED);
-		return false;
-	}
-
-	foreach($operations as $num => $operation){
-		if(!validate_operation($operation))	return false;
-	}
-
-	$actionid=get_dbid('actions','actionid');
-
-	$result = DBexecute('INSERT INTO actions (actionid,name,eventsource,esc_period,def_shortdata,def_longdata,recovery_msg,r_shortdata,r_longdata,evaltype,status)'.
-				' VALUES ('.$actionid.','.zbx_dbstr($name).','.$eventsource.','.$esc_period.','.zbx_dbstr($def_shortdata).','.zbx_dbstr($def_longdata).','.$recovery_msg.','.zbx_dbstr($r_shortdata).','.zbx_dbstr($r_longdata).','.$evaltype.','.$status.')');
-
-	foreach($operations as $operation)
-		if(!$result = add_action_operation($actionid, $operation))
-			break;
-
-	if($result){
-		foreach($conditions as $condition)
-		if(!$result = add_action_condition($actionid, $condition))
-			break;
-	}
-
-	if(!$result)
-		return $result;
-
-return $actionid;
-}
-
-// Update Action
-
-function update_action($actionid, $name, $eventsource, $esc_period, $def_shortdata, 
-		$def_longdata, $recovery_msg, $r_shortdata, $r_longdata, $evaltype, $status, $conditions, $operations
-		){
-
-	if(!is_array($conditions) || count($conditions) == 0){
-		/*
-		error(S_NO_CONDITIONS_DEFINED);
-		return false;
-		*/
-	}
-	else{
-		if(!check_permission_for_action_conditions($conditions)) return false;
-
-		foreach($conditions as $condition)
-			if( !validate_condition($condition['type'],$condition['value']) ) return false;
-	}
-
-	if(!is_array($operations) || count($operations) == 0){
-		error(S_NO_OPERATIONS_DEFINED);
-		return false;
-	}
-
-	foreach($operations as $num => $operation){
-		if(!validate_operation($operation))	return false;
-	}
-
-	$result = DBexecute('UPDATE actions SET name='.zbx_dbstr($name).
-							',eventsource='.$eventsource.
-							',esc_period='.$esc_period.
-							',def_shortdata='.zbx_dbstr($def_shortdata).
-							',def_longdata='.zbx_dbstr($def_longdata).
-							',recovery_msg='.$recovery_msg.
-							',r_shortdata='.zbx_dbstr($r_shortdata).
-							',r_longdata='.zbx_dbstr($r_longdata).
-							',evaltype='.$evaltype.
-							',status='.$status.
-						' WHERE actionid='.$actionid);
-
-	if($result){
-		DBexecute('DELETE FROM conditions WHERE actionid='.$actionid);
-
-		$opers = get_operations_by_actionid($actionid);
-		while($operation = DBFetch($opers)){
-			DBexecute('DELETE FROM opconditions WHERE operationid='.$operation['operationid']);
-			DBexecute('DELETE FROM opmediatypes WHERE operationid='.$operation['operationid']);
-		}
-		DBexecute('DELETE FROM operations WHERE actionid='.$actionid);
-
-
-		foreach($operations as $operation)
-			if(!$result = add_action_operation($actionid, $operation))
-				break;
-
-		if($result){
-			foreach($conditions as $condition)
-			if(!$result = add_action_condition($actionid, $condition))
-				break;
-		}
-	}
-
-return $result;
-}
-
-// Delete Action
-
-function delete_action( $actionid ){
-	$return = DBexecute('delete from conditions where actionid='.$actionid);
-
-	$opers = get_operations_by_actionid($actionid);
-	while($operation = DBFetch($opers)){
-		DBexecute('DELETE FROM opmediatypes WHERE operationid='.$operation['operationid']);
-		DBexecute('DELETE FROM opconditions WHERE operationid='.$operation['operationid']);
-	}
-
-	if($return)
-		$result = DBexecute('delete from operations where actionid='.$actionid);
-
-	if($return)
-		$result = DBexecute('delete from alerts where actionid='.$actionid);
-
-	if($return)
-		$result = DBexecute('delete from actions where actionid='.$actionid);
-
-return $result;
-}
-
 function condition_operator2str($operator){
 	$str_op[CONDITION_OPERATOR_EQUAL] 	= '=';
 	$str_op[CONDITION_OPERATOR_NOT_EQUAL]	= '<>';
@@ -439,7 +169,15 @@ function condition_value2str($conditiontype, $value){
 			$str_val.= $group['name'];
 			break;
 		case CONDITION_TYPE_TRIGGER:
-			$str_val = expand_trigger_description($value);
+			$trig = CTrigger::get(array(
+				'triggerids' => $value,
+				'expandTriggerDescriptions' => true,
+				'output' => API_OUTPUT_EXTEND,
+				'select_hosts' => API_OUTPUT_EXTEND,
+			));
+			$trig = reset($trig);
+			$host = reset($trig['hosts']);
+			$str_val = $host['host'].':'.$trig['description'];
 			break;
 		case CONDITION_TYPE_HOST:
 		case CONDITION_TYPE_HOST_TEMPLATE:
@@ -669,17 +407,16 @@ function get_conditions_by_eventsource($eventsource){
 }
 
 function get_opconditions_by_eventsource($eventsource){
-	$conditions[EVENT_SOURCE_TRIGGERS] = array(
+	$conditions = array(
+		EVENT_SOURCE_TRIGGERS => array(
 			CONDITION_TYPE_EVENT_ACKNOWLEDGED
-		);
-
-	$conditions[EVENT_SOURCE_DISCOVERY] = array(
+		),
+		EVENT_SOURCE_DISCOVERY => array(),
 		);
 
 	if(isset($conditions[$eventsource]))
 		return $conditions[$eventsource];
 
-	return $conditions[EVENT_SOURCE_TRIGGERS];
 }
 
 function get_operations_by_eventsource($eventsource){
@@ -847,30 +584,45 @@ function validate_condition($conditiontype, $value){
 
 	switch($conditiontype){
 		case CONDITION_TYPE_HOST_GROUP:
-			$available_groups = get_accessible_groups_by_user($USER_DETAILS,PERM_READ_ONLY,null,get_current_nodeid(true));
-			if(!isset($available_groups[$value])){
+			$groups = CHostGroup::get(array(
+				'groupids' => $value,
+				'output' => API_OUTPUT_SHORTEN,
+				'nodeids' => get_current_nodeid(true),
+			));
+			if(empty($groups)){
 				error(S_INCORRECT_GROUP);
 				return false;
 			}
 			break;
 		case CONDITION_TYPE_HOST_TEMPLATE:
-			$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,PERM_READ_ONLY,null,get_current_nodeid(true));
-			if(!isset($available_hosts[$value])){
+			$templates = CTemplate::get(array(
+				'templateids' => $value,
+				'output' => API_OUTPUT_SHORTEN,
+				'nodeids' => get_current_nodeid(true),
+			));
+			if(empty($templates)){
 				error(S_INCORRECT_HOST);
 				return false;
 			}
 			break;
 		case CONDITION_TYPE_TRIGGER:
-			if( !DBfetch(DBselect('select triggerid from triggers where triggerid='.$value)) ||
-				!check_right_on_trigger_by_triggerid(PERM_READ_ONLY, $value) )
-			{
+			$triggers = CTrigger::get(array(
+				'triggerids' => $value,
+				'output' => API_OUTPUT_SHORTEN,
+				'nodeids' => get_current_nodeid(true),
+			));
+			if(empty($triggers)){
 				error(S_INCORRECT_TRIGGER);
 				return false;
 			}
 			break;
 		case CONDITION_TYPE_HOST:
-			$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,PERM_READ_ONLY,null,get_current_nodeid(true));
-			if(!isset($available_hosts[$value])){
+			$hosts = CHost::get(array(
+				'hostids' => $value,
+				'output' => API_OUTPUT_SHORTEN,
+				'nodeids' => get_current_nodeid(true),
+			));
+			if(empty($hosts)){
 				error(S_INCORRECT_HOST);
 				return false;
 			}
@@ -935,7 +687,6 @@ function validate_condition($conditiontype, $value){
 }
 
 function validate_operation($operation){
-	global $USER_DETAILS;
 
 	switch($operation['operationtype']){
 		case OPERATION_TYPE_MESSAGE:
@@ -968,16 +719,24 @@ function validate_operation($operation){
 			break;
 		case OPERATION_TYPE_GROUP_ADD:
 		case OPERATION_TYPE_GROUP_REMOVE:
-			$available_groups = get_accessible_groups_by_user($USER_DETAILS,PERM_READ_WRITE);
-			if(!isset($available_groups[$operation['objectid']])){
+			$groups = CHostGroup::get(array(
+				'groupids' => $operation['objectid'],
+				'output' => API_OUTPUT_SHORTEN,
+				'editable' => 1,
+			));
+			if(empty($groups)){
 				error(S_INCORRECT_GROUP);
 				return false;
 			}
 			break;
 		case OPERATION_TYPE_TEMPLATE_ADD:
 		case OPERATION_TYPE_TEMPLATE_REMOVE:
-			$available_hosts = get_accessible_hosts_by_user($USER_DETAILS,PERM_READ_WRITE);
-			if(!isset($available_hosts[$operation['objectid']])){
+			$tpls = CTemplate::get(array(
+				'templateids' => $operation['objectid'],
+				'output' => API_OUTPUT_SHORTEN,
+				'editable' => 1,
+			));
+			if(empty($tpls)){
 				error(S_INCORRECT_HOST);
 				return false;
 			}
@@ -1044,18 +803,19 @@ return $delays;
 }
 
 function get_history_of_actions($limit,&$last_clock=null,$sql_cond=''){
-	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array(), PERM_RES_IDS_ARRAY);
+	validate_sort_and_sortorder('clock', ZBX_SORT_DOWN);
+	$available_triggers = get_accessible_triggers(PERM_READ_ONLY, array());
 
 	$alerts = array();
 	$clock = array();
 	$table = new CTableInfo(S_NO_ACTIONS_FOUND);
 	$table->setHeader(array(
-			is_show_all_nodes() ? make_sorting_link(S_NODES,'a.alertid') : null,
-			make_sorting_link(S_TIME,'clock'),
-			make_sorting_link(S_TYPE,'description'),
-			make_sorting_link(S_STATUS,'status'),
-			make_sorting_link(S_RETRIES_LEFT,'retries'),
-			make_sorting_link(S_RECIPIENTS,'sendto'),
+			is_show_all_nodes() ? make_sorting_header(S_NODES,'a.alertid') : null,
+			make_sorting_header(S_TIME,'clock'),
+			make_sorting_header(S_TYPE,'description'),
+			make_sorting_header(S_STATUS,'status'),
+			make_sorting_header(S_RETRIES_LEFT,'retries'),
+			make_sorting_header(S_RECIPIENTS,'sendto'),
 			S_MESSAGE,
 			S_ERROR
 			));
@@ -1069,7 +829,7 @@ function get_history_of_actions($limit,&$last_clock=null,$sql_cond=''){
 				' AND '.DBcondition('e.objectid',$available_triggers).
 				' AND '.DBin_node('a.alertid').
 			' ORDER BY a.clock DESC';
-	$result=DBselect($sql,$limit);
+	$result = DBselect($sql,$limit);
 	while($row=DBfetch($result)){
 		$alerts[] = $row;
 		$clock[] = $row['clock'];
@@ -1077,10 +837,13 @@ function get_history_of_actions($limit,&$last_clock=null,$sql_cond=''){
 
 	$last_clock = !empty($clock)?min($clock):null;
 
-	order_page_result($alerts, 'clock', ZBX_SORT_DOWN);
+	$sortfield = getPageSortField('clock');
+	$sortorder = getPageSortOrder();
+
+	order_result($alerts, $sortfield, $sortorder);
 
 	foreach($alerts as $num => $row){
-		$time=date(S_DATE_FORMAT_YMDHMS,$row['clock']);
+		$time=zbx_date2str(S_HISTORY_OF_ACTIONS_DATE_FORMAT,$row['clock']);
 
 		if($row['status'] == ALERT_STATUS_SENT){
 			$status=new CSpan(S_SENT,'green');
@@ -1147,7 +910,7 @@ function get_action_msgs_for_event($eventid){
 // mediatypes
 		$mediatype = array_pop($row['mediatypes']);
 
-		$time=date(S_DATE_FORMAT_YMDHMS,$row["clock"]);
+		$time=zbx_date2str(S_EVENT_ACTION_MESSAGES_DATE_FORMAT,$row["clock"]);
 		if($row['esc_step'] > 0){
 			$time = array(bold(S_STEP.': '),$row["esc_step"],br(),bold(S_TIME.': '),br(),$time);
 		}
@@ -1216,7 +979,7 @@ function get_action_cmds_for_event($eventid){
 	));
 
 	foreach($alerts as $alertid => $row){
-		$time = date('Y.M.d H:i:s', $row['clock']);
+		$time = zbx_date2str(S_EVENT_ACTION_CMDS_DATE_FORMAT, $row['clock']);
 		if($row['esc_step'] > 0){
 			$time = array(bold(S_STEP.': '), $row['esc_step'], br(), bold(S_TIME.': '), br(), $time);
 		}

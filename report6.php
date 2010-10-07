@@ -19,13 +19,13 @@
 **/
 ?>
 <?php
-	require_once ('include/config.inc.php');
-	require_once ('include/reports.inc.php');
+require_once ('include/config.inc.php');
+require_once ('include/reports.inc.php');
 
-	$page['title']	= "S_BAR_REPORTS";
-	$page['file']	= 'report6.php';
-	$page['hist_arg'] = array('period');
-	$page['scripts'] = array('class.calendar.js','scriptaculous.js?load=effects');
+$page['title']	= "S_BAR_REPORTS";
+$page['file']	= 'report6.php';
+$page['hist_arg'] = array('period');
+$page['scripts'] = array('class.calendar.js','effects.js');
 
 include_once('include/page_header.php');
 ?>
@@ -58,21 +58,18 @@ include_once('include/page_header.php');
 
 		'palette'=>		array(T_ZBX_INT, O_OPT,	NULL,	null,		NULL),
 		'palettetype'=>		array(T_ZBX_INT, O_OPT,	NULL,	null,		NULL),
-
 // actions
 		'delete_item'=>		array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	null,	null),
 		'delete_period'=>	array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	null,	null),
 		'report_show'=>		array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	null,	null),
-
 // filter
 		'report_show'=>		array(T_ZBX_STR, O_OPT,	P_SYS,	null,		NULL),
 
 		'report_timesince'=>	array(T_ZBX_INT, O_OPT,	P_UNSET_EMPTY,	null,	NULL),
-		'report_timetill'=>	array(T_ZBX_INT, O_OPT,	P_UNSET_EMPTY,	null,	NULL),
-
+		'report_timetill'=>		array(T_ZBX_INT, O_OPT,	P_UNSET_EMPTY,	null,	NULL),
 //ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			NULL),
-		'favid'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj}) && ("filter"=={favobj})'),
 	);
 
@@ -124,6 +121,9 @@ include_once('include/page_header.php');
 		$new_period = get_request('new_period', array());
 
 		foreach($_REQUEST['periods'] as $pid => $data){
+			$data['report_timesince'] = zbxDateToTime($data['report_timesince']);
+			$data['report_timetill'] = zbxDateToTime($data['report_timetill']);
+
 			if(	$new_period['report_timesince'] == $data['report_timesince'] &&
 				$new_period['report_timetill'] == $data['report_timetill'])
 			{
@@ -148,10 +148,12 @@ include_once('include/page_header.php');
 <?php
 	$config = $_REQUEST['config'] = get_request('config',1);
 
+	$_REQUEST['report_timesince'] = zbxDateToTime(get_request('report_timesince',date('YmdHis', time()-86400)));
+	$_REQUEST['report_timetill'] = zbxDateToTime(get_request('report_timetill',date('YmdHis')));
+
 	$rep6_wdgt = new CWidget();
 // Header
 	$r_form = new CForm();
-//	$r_form->addVar('items', get_request('items',array()));
 	$cnfCmb = new CComboBox('config', $config, 'submit();');
 		$cnfCmb->addItem(1, S_BAR_REPORT_1);
 		$cnfCmb->addItem(2, S_BAR_REPORT_2);
@@ -215,5 +217,7 @@ include_once('include/page_header.php');
 	$rep6_wdgt->show();
 ?>
 <?php
-include_once 'include/page_footer.php';
+
+include_once('include/page_footer.php');
+
 ?>

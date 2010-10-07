@@ -45,7 +45,7 @@
 					$str[$key] = $b;
 				}
 		}
-		else if(is_string($str)) {
+		else{
 			$b = new CTag('strong','yes','');
 			$b->addItem($str);
 			$str = $b;
@@ -74,25 +74,8 @@
 	return $result;
 	}
 
-	function bfirst($str){
-// mark first symbol of string as bold
-		$res = bold($str[0]);
-		for($i=1,$max=zbx_strlen($str); $i<$max; $i++)	$res .= $str[$i];
-		$str = $res;
-		return $str;
-	}
-
 	function nbsp($str){
 		return str_replace(" ",SPACE,$str);
-	}
-
-	function url1_param($parameter){
-		if(isset($_REQUEST[$parameter])){
-			return "$parameter=".$_REQUEST[$parameter];
-		}
-		else{
-			return "";
-		}
 	}
 
 	function prepare_url(&$var, $varname=null){
@@ -105,7 +88,8 @@
 		else{
 			$result = '&'.$varname.'='.urlencode($var);
 		}
-		return $result;
+
+	return $result;
 	}
 
 	function url_param($parameter,$request=true,$name=null){
@@ -152,10 +136,8 @@
 		}
 
 		if(!is_null($state)){
-			$icon = new CDiv(SPACE, $state?'arrowup':'arrowdown');
+			$icon = new CIcon(S_SHOW.'/'.S_HIDE, $state?'arrowup':'arrowdown', "change_hat_state(this,'".$id."');");
 			$icon->setAttribute('id',$id.'_icon');
-			$icon->addAction('onclick',new CJSscript("javascript: change_hat_state(this,'".$id."');"));
-			$icon->setAttribute('title',S_SHOW.'/'.S_HIDE);
 			$icons_row[] = $icon;
 		}
 		else{
@@ -216,38 +198,11 @@
 		}
 	}
 
-	function get_thin_table_header($col1, $col2=NULL){
-
-		$table = new CTable(NULL,'thin_header');
-//		$table->setAttribute('border',1);
-		$table->setCellSpacing(0);
-		$table->setCellPadding(1);
-
-		if(!is_null($col2)){
-			$td_r = new CCol($col2,'thin_header_r');
-			$td_r->setAttribute('align','right');
-			$table->addRow(array(new CCol($col1,'thin_header_l'), $td_r));
-		}
-		else{
-			$td_c = new CCol($col1,'thin_header_c');
-			$td_c->setAttribute('align','center');
-
-			$table->addRow($td_c);
-		}
-
-	return $table;
-	}
-
-	function show_thin_table_header($col1, $col2=NULL){
-		$table = get_thin_table_header($col1, $col2);
-		$table->Show();
-	}
-
 	function get_table_header($col1, $col2=SPACE){
 		if(isset($_REQUEST['print'])){
 			hide_form_items($col1);
 			hide_form_items($col2);
-		//if empty header than do not show it
+//if empty header than do not show it
 			if(($col1 == SPACE) && ($col2 == SPACE)) return new CJSscript('');
 		}
 
@@ -283,5 +238,45 @@
 	function show_table_header($col1, $col2=SPACE){
 		$table = get_table_header($col1, $col2);
 		$table->Show();
+	}
+
+	function get_icon($name, $params=array()){
+
+		switch($name){
+			case 'favourite':
+				if(infavorites($params['fav'], $params['elid'], $params['elname'])){
+					$icon = new CIcon(
+						S_REMOVE_FROM.' '.S_FAVOURITES,
+						'iconminus',
+						'rm4favorites("'.$params['elname'].'","'.$params['elid'].'", 0);'
+					);
+				}
+				else{
+					$icon = new CIcon(
+						S_ADD_TO.' '.S_FAVOURITES,
+						'iconplus',
+						'add2favorites("'.$params['elname'].'","'.$params['elid'].'");'
+					);
+				}
+				$icon->setAttribute('id','addrm_fav');
+			break;
+			case 'fullscreen':
+				$url = new Curl();
+				$url->setArgument('fullscreen', $params['fullscreen'] ? '0' : '1');
+				$icon = new CIcon(
+					$_REQUEST['fullscreen'] ? S_NORMAL.' '.S_VIEW : S_FULLSCREEN,
+					'fullscreen',
+					"document.location = '".$url->getUrl()."';"
+				);
+			break;
+			case 'menu':
+				$icon = new CIcon(S_MENU, 'iconmenu', 'create_page_menu(event, "'.$params['menu'].'");');
+			break;
+			case 'reset':
+				$icon = new CIcon(S_RESET, 'iconreset', 'timeControl.objectReset("'.$params['id'].'");');
+			break;
+		}
+
+		return $icon;
 	}
 ?>

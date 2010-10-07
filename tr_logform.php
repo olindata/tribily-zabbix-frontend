@@ -33,6 +33,7 @@ define('ZBX_PAGE_NO_MENU', 1);
 
 $strltype = array();
 $strltype[] = 'log[%';
+$strltype[] = 'logrt[%';
 $strltype[] = 'eventlog[%';
 $strltype[] = 'snmptraps';
 
@@ -72,12 +73,10 @@ include_once('include/page_header.php');
 
 //------------------------ <ACTIONS> ---------------------------
 if(isset($_REQUEST['save_trigger'])){
-
 	show_messages();
 
-	$expression = construct_expression($_REQUEST['itemid'],get_request('expressions',array()));
-//SDII($_REQUEST);
-	if($expression){
+	$exprs = get_request('expressions', false);
+	if($exprs && ($expression = construct_expression($_REQUEST['itemid'], $exprs))){
 		if(!check_right_on_trigger_by_expression(PERM_READ_WRITE, $expression)) access_deny();
 
 		$now=time();
@@ -113,7 +112,6 @@ if(isset($_REQUEST['save_trigger'])){
 
 			$result &= CTrigger::deleteDependencies($trigger);
 			$result &= CTrigger::addDependencies($deps);
-
 //REVERT
 			$result = DBend($result);
 
@@ -177,7 +175,6 @@ if(isset($_REQUEST['save_trigger'])){
 //------------------------ <FORM> ---------------------------
 
 if(isset($_REQUEST['sform'])){
-
 	$frmTRLog = new CFormTable(S_TRIGGER,'tr_logform.php','POST',null,'sform');
 	$frmTRLog->setHelp('web.triggerlog.service.php');
 	$frmTRLog->setTableClass('formlongtable formtable');
@@ -203,6 +200,7 @@ if(isset($_REQUEST['sform'])){
 						' AND f.triggerid = t.triggerid '.
 						' AND i.value_type IN ('.ITEM_VALUE_TYPE_LOG.' , '.ITEM_VALUE_TYPE_TEXT.', '.ITEM_VALUE_TYPE_STR.')'.
 						' AND i.key_ LIKE \''.$matchkey.'\'';
+
 		$res = DBselect($sql);
 		while($rows = DBfetch($res)){
 			$description = $rows['description'];
@@ -234,12 +232,11 @@ if(isset($_REQUEST['sform'])){
 			$expr = preg_replace('/^\((.*)\)$/u','$1',$expr);
 
 			if(preg_match('/\([regexp|iregexp].+\)[=|#]0/U',$expr, $rr)){
-
 				$value = preg_replace('/(\(([regexp|iregexp].*)\)[=|#]0)/U','$2',$expr);
 			}
 
 			$value = preg_replace('/([=|#]0)/','',$expr);
-			$value = preg_replace('/^\((.*)\)$/u','$1',$value);
+			$value = preg_replace('/\((.*?)\)/u','$1',$value);
 
 			$expressions[$id]['value'] = trim($value);
 			$expressions[$id]['type'] = (zbx_strpos($expr,'#0',zbx_strlen($expr)-3) === false)?(REGEXP_EXCLUDE):(REGEXP_INCLUDE);
@@ -252,12 +249,12 @@ if(isset($_REQUEST['sform'])){
 
 			if (zbx_strpos($expr,'#0',zbx_strlen($expr)-3) === false) {
 //REGEXP_EXCLUDE
-//				$value = str_replace('&', ' OR ', $value);
-//				$value = str_replace('|', ' AND ', $value);
+				$value = str_replace('&', ' OR ', $value);
+				$value = str_replace('|', ' AND ', $value);
 			} else {
 //EGEXP_INCLUDE
-//				$value = str_replace('&', ' AND ', $value);
-//				$value = str_replace('|', ' OR ', $value);
+				$value = str_replace('&', ' AND ', $value);
+				$value = str_replace('|', ' OR ', $value);
 			}
 
 			$value = preg_replace($functionid,$functions,$value);
@@ -305,7 +302,7 @@ if(isset($_REQUEST['sform'])){
 
 	$exp_select = new CComboBox('expr_type');
 	$exp_select->setAttribute('id','expr_type');
-		$exp_select->addItem(REGEXP_INCLUDE,S_INCLUDE);
+		$exp_select->addItem(REGEXP_INCLUDE,S_INCLUDE_S);
 		$exp_select->addItem(REGEXP_EXCLUDE,S_EXCLUDE);
 
 
@@ -340,7 +337,9 @@ if(isset($_REQUEST['sform'])){
 
 	$bExprResult = true;
 
-	if(isset($_REQUEST['triggerid']) && !isset($_REQUEST['save_trigger']) && !validate_expression(construct_expression($itemid,$expressions)) && !isset($_REQUEST['form_refresh'])){
+	if(isset($_REQUEST['triggerid']) && !isset($_REQUEST['save_trigger'])
+			&& !validate_expression(construct_expression($itemid,$expressions)) && !isset($_REQUEST['form_refresh'])){
+
 		unset($expressions);
 		$expressions[0]['value'] = $expr_incase;
 		$expressions[0]['type'] = 0;
@@ -358,10 +357,10 @@ if(isset($_REQUEST['sform'])){
 		$imgdn->setAttribute('onclick','javascript:  element_down("logtr'.$id.'");');
 		$imgdn->setAttribute('onmouseover','javascript: this.style.cursor = "pointer";');
 
-		$del_url = new CSpan('Delete','link');
+		$del_url = new CSpan(S_DELETE,'link');
 		$del_url->setAttribute('onclick', 'javascript: if(confirm("'.S_DELETE_EXPRESSION_Q.'")) remove_expression("logtr'.$id.'"); return false;');
 
-		$row = new CRow(array(htmlspecialchars($expr['view']),(($expr['type']==REGEXP_INCLUDE)?S_INCLUDE:S_EXCLUDE),array($imgup,SPACE,$imgdn),$del_url));
+		$row = new CRow(array(htmlspecialchars($expr['view']),(($expr['type']==REGEXP_INCLUDE)?S_INCLUDE_S:S_EXCLUDE),array($imgup,SPACE,$imgdn),$del_url));
 		$row->setAttribute('id','logtr'.$id);
 		$table->addRow($row);
 
@@ -376,7 +375,7 @@ if(isset($_REQUEST['sform'])){
 	$maxid=0;
 	foreach($keys as $id => $val){
 
-	  $del_url = new CLink('Delete','#','action','javascript: if(confirm("'.S_DELETE_KEYWORD_Q.'")) remove_keyword("keytr'.$id.'"); return false;');
+	  $del_url = new CLink(S_DELETE,'#','action','javascript: if(confirm("'.S_DELETE_KEYWORD_Q.'")) remove_keyword("keytr'.$id.'"); return false;');
 	  $row = new CRow(array(htmlspecialchars($val['value']),$val['type'],$del_url));
 	  $row->setAttribute('id','keytr'.$id);
 	  $keyTable->addRow($row);
@@ -412,13 +411,12 @@ if(isset($_REQUEST['sform'])){
 	$frmTRLog->addItemToBottomRow(new CButton('save_trigger',S_SAVE,'javascript: document.forms[0].action += \'?saction=1\';'));
 	$frmTRLog->addItemToBottomRow(SPACE);
 
-	$cb = new CButton('cancel',S_CANCEL);
+	$cb = new CButton('cancel',S_CANCEL, 'javascript: self.close();');
 	$cb->setType('button');
-	$cb->setAction('javascript: self.close();');
 
 	$frmTRLog->addItemToBottomRow($cb);
-	if ($bExprResult) {
-	  $frmTRLog->show();
+	if($bExprResult){
+		$frmTRLog->show();
 	}
 }
 //------------------------ </FORM> ---------------------------

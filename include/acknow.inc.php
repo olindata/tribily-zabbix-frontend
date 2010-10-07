@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2005 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -32,27 +32,7 @@ return $event_data;
 }
 
 function get_acknowledges_by_eventid($eventid){
-	return DBselect("select * from acknowledges where eventid=$eventid");
-}
-
-function add_acknowledge_coment($eventid, $userid, $message){
-	$result = set_event_acnowledged($eventid);
-	if(!$result)
-		return $result;
-
-	$acknowledgeid = get_dbid("acknowledges","acknowledgeid");
-
-	$result =  DBexecute("insert into acknowledges (acknowledgeid,userid,eventid,clock,message)".
-		" values ($acknowledgeid,$userid,$eventid,".time().",".zbx_dbstr($message).")");
-
-	if(!$result)
-		return $result;
-
-	return $acknowledgeid;
-}
-
-function set_event_acnowledged($eventid){
-	return DBexecute("update events set acknowledged=1 where eventid=$eventid");
+	return DBselect("SELECT a.*, u.alias FROM acknowledges a LEFT JOIN users u ON u.userid=a.userid  WHERE a.eventid=$eventid");
 }
 
 function make_acktab_by_eventid($eventid){
@@ -62,12 +42,12 @@ function make_acktab_by_eventid($eventid){
 	$acks = get_acknowledges_by_eventid($eventid);
 
 	while($ack = DBfetch($acks)){
-		$user = CUser::get(array('userids' => $ack['userid'],  'extendoutput' => 1));
-		$user = reset($user);
+		//$user = CUser::get(array('userids' => $ack['userid'],  'extendoutput' => 1));
+		//$user = reset($user);
 
 		$table->addRow(array(
-			date(S_DATE_FORMAT_YMDHMS,$ack['clock']),
-			$user['alias'],
+			zbx_date2str(S_ACKNOWINC_BY_EVENTS_DATE_FORMAT,$ack['clock']),
+			$ack['alias'],
 			new CCol(zbx_nl2br($ack['message']),'wraptext')
 		));
 	}

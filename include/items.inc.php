@@ -202,7 +202,7 @@
 				' WHERE hg.groupid='.$groupid.
 					' and i.key_='.zbx_dbstr($item['key_']).
 					' and hg.hostid=i.hostid';
-		$result=DBexecute($sql);
+		$result=DBSelect($sql);
 		while($row=DBfetch($result)){
 			$item['hostid'] = $row['hostid'];
 			update_item($row['itemid'],$item);
@@ -227,7 +227,7 @@
 			' WHERE hg.groupid='.$groupid.
 				' AND i.key_='.zbx_dbstr($item["key_"]).
 				' AND hg.hostid=i.hostid';
-		$result=DBexecute($sql);
+		$result=DBSelect($sql);
 		while($row=DBfetch($result)){
 			$del_items[$row['itemid']] = $row['itemid'];
 		}
@@ -239,11 +239,11 @@
 
 	# Add Item definition to selected group
 
-	function	add_item_to_group($groupid,$item){
+	function add_item_to_group($groupid,$item){
 /*	$description,$key,$hostid,$delay,$history,$status,$type,$snmp_community,$snmp_oid,$value_type,$trapper_hosts,$snmp_port,$units,$multiplier,$delta,$snmpv3_securityname,$snmpv3_securitylevel,$snmpv3_authpassphrase,$snmpv3_privpassphrase,$formula,$trends,$logtimefmt,$valuemapid,$delay_flex,$params,$ipmi_sensor,$applications)
 //*/
 		$sql='SELECT hostid FROM hosts_groups WHERE groupid='.$groupid;
-		$result=DBexecute($sql);
+		$result=DBSelect($sql);
 		while($row=DBfetch($result)){
 			$item['hostid'] = $row['hostid'];
 			add_item($item);
@@ -318,18 +318,25 @@
 			return false;
 		}
 
+		if(($item['type'] == ITEM_TYPE_DB_MONITOR && $item['key_'] == 'db.odbc.select[<unique short description>]') ||
+		   ($item['type'] == ITEM_TYPE_SSH && $item['key_'] == 'ssh.run[<unique short description>,<ip>,<port>,<encoding>]') ||
+		   ($item['type'] == ITEM_TYPE_TELNET && $item['key_'] == 'telnet.run[<unique short description>,<ip>,<port>,<encoding>]')) {
+		   	error(S_ITEMS_CHECK_KEY_DEFAULT_EXAMPLE_PASSED);
+		   	return false;
+		}
+
 		$res = calculate_item_nextcheck(0, $item['type'], $item['delay'], $item['delay_flex'], time());
-		if ($res['delay'] == SEC_PER_YEAR){
+		if ($res['delay'] == SEC_PER_YEAR && $item['type'] != ITEM_TYPE_ZABBIX_ACTIVE && $item['type'] != ITEM_TYPE_TRAPPER){
 			error(S_ITEM_WILL_NOT_BE_REFRESHED_PLEASE_ENTER_A_CORRECT_UPDATE_INTERVAL);
 			return FALSE;
 		}
 
-		if(($item['snmp_port']<1)||($item['snmp_port']>65535)){
+		if(($item['snmp_port']<1 || $item['snmp_port']>65535) && in_array($item['type'],array(ITEM_TYPE_SNMPV1,ITEM_TYPE_SNMPV2C,ITEM_TYPE_SNMPV3))){
 			error(S_INVALID_SNMP_PORT);
 			return FALSE;
 		}
 
-		if(preg_match('/^log\[|eventlog\[/', $item['key_']) && ($item['value_type'] != ITEM_VALUE_TYPE_LOG)){
+		if(preg_match('/^(log|logrt|eventlog)\[/', $item['key_']) && ($item['value_type'] != ITEM_VALUE_TYPE_LOG)){
 			error(S_TYPE_INFORMATION_BUST_LOG_FOR_LOG_KEY);
 			return FALSE;
 		}
@@ -349,7 +356,6 @@
 
 		if($item['type'] == ITEM_TYPE_AGGREGATE){
 			/* grpfunc['group','key','itemfunc','numeric param'] */
-//			if(eregi('^((.)*)(\[\"((.)*)\"\,\"((.)*)\"\,\"((.)*)\"\,\"([0-9]+)\"\])$', $item['key_'], $arr)){
 			if(preg_match('/^((.)*)(\[\"((.)*)\"\,\"((.)*)\"\,\"((.)*)\"\,\"([0-9]+)\"\])$/i', $item['key_'], $arr)){
 				$g=$arr[1];
 				if(!str_in_array($g,array("grpmax","grpmin","grpsum","grpavg"))){
@@ -375,12 +381,12 @@
 			}
 		}
 
-		$sql = 'SELECT itemid,hostid '.
+		$sql = 'SELECT itemid, hostid, templateid '.
 				' FROM items '.
 				' WHERE hostid='.$item['hostid'].
 					' AND key_='.zbx_dbstr($item['key_']);
 		$db_item = DBfetch(DBselect($sql));
-		if($db_item && $item['templateid'] == 0){
+		if($db_item && (($item['templateid'] == 0) || (($db_item['templateid'] != 0) && ($item['templateid'] != 0) && ($item['templateid'] != $db_item['templateid'])))){
 			error(S_AN_ITEM_WITH_THE_KEY.SPACE.'['.$item['key_'].']'.SPACE.S_ALREADY_EXISTS_FOR_HOST_SMALL.SPACE.'['.$host['host'].'].'.SPACE.S_THE_KEY_MUST_BE_UNIQUE);
 			return FALSE;
 		}
@@ -390,7 +396,7 @@
 
 			$result = update_item($db_item['itemid'], $item);
 
-		return $result;
+			return $result;
 		}
 
 		// first add mother item
@@ -402,15 +408,15 @@
 					'delta,snmpv3_securityname,snmpv3_securitylevel,snmpv3_authpassphrase,'.
 					'snmpv3_privpassphrase,formula,trends,logtimefmt,valuemapid,'.
 					'delay_flex,params,ipmi_sensor,templateid,authtype,username,password,publickey,privatekey)'.
-			' VALUES ('.$itemid.','.zbx_dbstr($item['description']).','.zbx_dbstr($item['key_']).','.$item['hostid'].','.
-						$item['delay'].','.$item['history'].','.$item['status'].','.$item['type'].','.
-						zbx_dbstr($item['snmp_community']).','.zbx_dbstr($item['snmp_oid']).','.$item['value_type'].','.$item['data_type'].','.
-						zbx_dbstr($item['trapper_hosts']).','.$item['snmp_port'].','.zbx_dbstr($item['units']).','.$item['multiplier'].','.
-						$item['delta'].','.zbx_dbstr($item['snmpv3_securityname']).','.$item['snmpv3_securitylevel'].','.
+			' VALUES ('.$itemid.','.zbx_dbstr($item['description']).','.zbx_dbstr($item['key_']).','.(!$item['hostid']? '0':$item['hostid']).','.
+						(!$item['delay']? '0':$item['delay']).','.(!$item['history']? '0':$item['history']).','.(!$item['status']? '0':$item['status']).','.(!$item['type']? '0':$item['type']).','.
+						zbx_dbstr($item['snmp_community']).','.zbx_dbstr($item['snmp_oid']).','.(!$item['value_type']? '0':$item['value_type']).','.(!$item['data_type']? '0':$item['data_type']).','.
+						zbx_dbstr($item['trapper_hosts']).','.$item['snmp_port'].','.zbx_dbstr($item['units']).','.(!$item['multiplier'] ? '0':$item['multiplier']).','.
+						intval($item['delta']).','.zbx_dbstr($item['snmpv3_securityname']).','.intval($item['snmpv3_securitylevel']).','.
 						zbx_dbstr($item['snmpv3_authpassphrase']).','.zbx_dbstr($item['snmpv3_privpassphrase']).','.
-						zbx_dbstr($item['formula']).','.$item['trends'].','.zbx_dbstr($item['logtimefmt']).','.$item['valuemapid'].','.
+						zbx_dbstr($item['formula']).','.(!$item['trends'] ? '0':$item['trends']).','.zbx_dbstr($item['logtimefmt']).','.(!$item['valuemapid'] ? '0':$item['valuemapid']).','.
 						zbx_dbstr($item['delay_flex']).','.zbx_dbstr($item['params']).','.
-						zbx_dbstr($item['ipmi_sensor']).','.$item['templateid'].','.$item['authtype'].','.
+						zbx_dbstr($item['ipmi_sensor']).','.$item['templateid'].','.intval($item['authtype']).','.
 						zbx_dbstr($item['username']).','.zbx_dbstr($item['password']).','.
 						zbx_dbstr($item['publickey']).','.zbx_dbstr($item['privatekey']).')'
 			);
@@ -448,27 +454,6 @@
 		}
 
 	return $result;
-	}
-
-	function update_trigger_value_to_unknown_by_itemid($itemids){
-		zbx_value2array($itemids);
-
-		$now = time();
-		$result = DBselect('SELECT DISTINCT t.triggerid '.
-				' FROM triggers t,functions f '.
-				' WHERE f.triggerid=t.triggerid '.
-					' AND '.DBcondition('f.itemid',$itemids));
-
-		$triggerids = array();
-		while($row = DBfetch($result)){
-			if(!add_event($row['triggerid'], TRIGGER_VALUE_UNKNOWN, $now))
-				continue;
-			$triggerids[$row['triggerid']] = $row['triggerid'];
-		}
-
-		if(!empty($triggers)){
-			DBexecute('UPDATE triggers SET value='.TRIGGER_VALUE_UNKNOWN.' WHERE '.DBcondition('triggerid',$triggerids));
-		}
 	}
 
 // Update Item status
@@ -524,13 +509,12 @@
 		'snmp_community','snmp_oid','value_type','trapper_hosts','snmp_port','units','multiplier','delta',
 		'snmpv3_securityname','snmpv3_securitylevel','snmpv3_authpassphrase','snmpv3_privpassphrase',
 		'formula','trends','logtimefmt','valuemapid','delay_flex','params','ipmi_sensor','applications','templateid');
-//*/
+*/
 		$upd_app = ((isset($item['applications'])) && !is_null($item['applications']));
 		$item_in_params = $item;
 
 		$item_data = get_item_by_itemid_limited($itemid);
 		$item_data['applications'] = get_applications_by_itemid($itemid);
-
 
 		if(!check_db_fields($item_data, $item)){
 			error(S_INCORRECT_ARGUMENTS_PASSED_TO_FUNCTION.SPACE.'[update_item]');
@@ -546,13 +530,20 @@
 			return false;
 		}
 
+		if(($item['type'] == ITEM_TYPE_DB_MONITOR && $item['key_'] == 'db.odbc.select[<unique short description>]') ||
+		   ($item['type'] == ITEM_TYPE_SSH && $item['key_'] == 'ssh.run[<unique short description>,<ip>,<port>,<encoding>]') ||
+		   ($item['type'] == ITEM_TYPE_TELNET && $item['key_'] == 'telnet.run[<unique short description>,<ip>,<port>,<encoding>]')) {
+		   	error(S_ITEMS_CHECK_KEY_DEFAULT_EXAMPLE_PASSED);
+			return false;
+		}
+
 		$res = calculate_item_nextcheck(0, $item['type'], $item['delay'], $item['delay_flex'], time());
-		if ($res['delay'] == SEC_PER_YEAR){
+		if ($res['delay'] == SEC_PER_YEAR && $item['type'] != ITEM_TYPE_ZABBIX_ACTIVE && $item['type'] != ITEM_TYPE_TRAPPER){
 			error(S_ITEM_WILL_NOT_BE_REFRESHED_PLEASE_ENTER_A_CORRECT_UPDATE_INTERVAL);
 			return FALSE;
 		}
 
-		if(($item['snmp_port']<1)||($item['snmp_port']>65535)){
+		if(($item['snmp_port'] < 1 || $item['snmp_port'] > 65535) && in_array($item['type'], array(ITEM_TYPE_SNMPV1,ITEM_TYPE_SNMPV2C,ITEM_TYPE_SNMPV3))){
 			error(S_INVALID_SNMP_PORT);
 			return FALSE;
 		}
@@ -561,7 +552,7 @@
 			$item['delta']=0;
 		}
 
-		if(preg_match('/^log\[|eventlog\[/', $item['key_']) && ($item['value_type'] != ITEM_VALUE_TYPE_LOG)){
+		if(preg_match('/^(log|logrt|eventlog)\[/', $item['key_']) && ($item['value_type'] != ITEM_VALUE_TYPE_LOG)){
 			error(S_TYPE_INFORMATION_BUST_LOG_FOR_LOG_KEY);
 			return FALSE;
 		}
@@ -570,12 +561,16 @@
 			$item['data_type'] = 0;
 		}
 
-		$db_item = DBfetch(DBselect('SELECT itemid FROM items WHERE hostid='.$item['hostid'].' and itemid<>'.$itemid.' and key_='.zbx_dbstr($item['key_'])));
-		if($db_item && $item['templateid'] == 0){
+		$sql = 'SELECT itemid, hostid, templateid '.
+				' FROM items '.
+				' WHERE hostid='.$item['hostid'].
+					' AND itemid<>'.$itemid.
+					' AND key_='.zbx_dbstr($item['key_']);
+		$db_item = DBfetch(DBselect($sql));
+		if($db_item && (($db_item['templateid'] != 0) || ($item['templateid'] == 0))){
 			error(S_AN_ITEM_WITH_THE_KEY.SPACE.'['.$item['key_'].']'.SPACE.S_ALREADY_EXISTS_FOR_HOST_SMALL.SPACE.'['.$host['host'].'].'.SPACE.S_THE_KEY_MUST_BE_UNIQUE);
 			return FALSE;
 		}
-
 // first update child items
 		$db_tmp_items = DBselect('SELECT itemid, hostid FROM items WHERE templateid='.$itemid);
 		while($db_tmp_item = DBfetch($db_tmp_items)){
@@ -595,7 +590,6 @@
 				error(S_INCORRECT_ARGUMENTS_PASSED_TO_FUNCTION.SPACE.'[update_item]');
 				return false;
 			}
-
 
 			$result = update_item($db_tmp_item['itemid'], $child_item_params);		// recursion!!!
 
@@ -699,9 +693,8 @@
 					'history'		=> array('template' => 1 , 'httptest' => 1),
 					'status'		=> array('template' => 1 , 'httptest' => 1),
 					'type'			=> array(),
-					'snmp_community'=>	array(),
-					'snmp_oid'		=> array(),
 					'snmp_community'	=> array('template' => 1),
+					'snmp_oid'		=> array(),
 					'snmp_port'		=> array('template' => 1),
 					'snmpv3_securityname'	=> array('template' => 1),
 					'snmpv3_securitylevel'	=> array('template' => 1),
@@ -727,9 +720,9 @@
 					'ipmi_sensor'		=> array());
 
 		foreach($restore_rules as $var_name => $info){
-			if(($item_data['type'] == ITEM_TYPE_HTTPTEST) && !isset($info['httptest'])){
+/*			if(($item_data['type'] == ITEM_TYPE_HTTPTEST) && !isset($info['httptest'])){
 				$item[$var_name] = $item_data[$var_name];
-			}
+			}*/
 
 			if(!isset($info['template']) && (0 != $item_data['templateid'])){
 				$item[$var_name] = $item_data[$var_name];
@@ -740,8 +733,9 @@
 			}
 		}
 
-		if($item_data['type'] == ITEM_TYPE_HTTPTEST)
-			$item['applications'] = get_applications_by_itemid($itemid);
+/*		if($item_data['type'] == ITEM_TYPE_HTTPTEST)
+			$item['applications'] = get_applications_by_itemid($itemid);*/
+
 	return update_item($itemid,$item);
 	}
 
@@ -1008,7 +1002,7 @@
 		if(!$result)	return	$result;
 //--
 
-// delete graphs		
+// delete graphs
 		$del_graphs = array();
 		$sql = 'SELECT gi.graphid'.
 			' FROM graphs_items gi'.
@@ -1023,12 +1017,12 @@
 		while($db_graph = DBfetch($db_graphs)){
 			$del_graphs[$db_graph['graphid']] = $db_graph['graphid'];
 		}
-		
+
 		if(!empty($del_graphs)){
 			$result = delete_graph($del_graphs);
 			if(!$result)	return	$result;
 		}
-		
+
 		DBexecute('DELETE FROM graphs_items WHERE '.DBcondition('itemid', $itemids));
 //--
 
@@ -1053,7 +1047,7 @@
 /*		$result = DBexecute('DELETE FROM items WHERE '.DBcondition('itemid',$itemids));*/
 		if($result){
 			foreach($items as $itemid => $item){
-				info(S_ITEM.SPACE."'".$hosts[$itemid]['host'].':'.$item['key_']."'".S_DELETED_SMALL);
+				info(S_ITEM.SPACE."'".$hosts[$itemid]['host'].':'.$item['key_']."'".SPACE.S_DELETED_SMALL);
 			}
 		}
 	return $result;
@@ -1090,32 +1084,44 @@
 	return $param;
 	}
 
-	function expand_item_key_by_data($item)
-	{
-		$key = $item['key_'];
+	function expand_item_key_by_data($item){
+		$key =& $item['key_'];
+		$macStack = array();
 
-		if (zbx_strstr($key, '{HOSTNAME}'))
-		{
-			$host = get_host_by_itemid($item['itemid']);
-			$key = str_replace('{HOSTNAME}', $host['host'], $key);
-		}
-		else if (zbx_strstr($key, '{IPADDRESS}'))
-		{
-			$host = get_host_by_itemid($item['itemid']);
-			$key = str_replace('{IPADDRESS}', $host['ip'], $key);
-		}
-		else if (zbx_strstr($key, '{HOST.DNS}'))
-		{
-			$host = get_host_by_itemid($item['itemid']);
-			$key = str_replace('{HOST.DNS}', $host['dns'], $key);
-		}
-		else if (zbx_strstr($key, '{HOST.CONN}'))
-		{
-			$host = get_host_by_itemid($item['itemid']);
-			$key = str_replace('{HOST.CONN}', $host['useip'] ? $host['ip'] : $host['dns'], $key);
+		$macroses = array('{HOSTNAME}', '{IPADDRESS}', '{HOST.DNS}', '{HOST.CONN}');
+
+		foreach($macroses as $macro){
+			$pos = 0;
+			while($pos = zbx_strpos($key, $macro, $pos)){
+				$pos++;
+				$macStack[] = $macro;
+			}
 		}
 
-		return $key;
+		if(!empty($macStack)){
+			$host = get_host_by_itemid($item['itemid']);
+
+			foreach($macStack as $macro){
+				switch($macro){
+					case '{HOSTNAME}':
+						$key = str_replace('{HOSTNAME}', $host['host'], $key);
+					break;
+					case '{IPADDRESS}':
+						$key = str_replace('{IPADDRESS}', $host['ip'], $key);
+					break;
+					case '{HOST.DNS}':
+						$key = str_replace('{HOST.DNS}', $host['dns'], $key);
+					break;
+					case '{HOST.CONN}':
+						$key = str_replace('{HOST.CONN}', $host['useip'] ? $host['ip'] : $host['dns'], $key);
+					break;
+				}
+			}
+		}
+
+		CUserMacro::resolveItem($item);
+
+		return $item['key_'];
 	}
 
 	function item_description($item){
@@ -1150,6 +1156,7 @@
  *
  */
 	function get_items_data_overview($hostids,$view_style=null){
+		global $USER_DETAILS;
 
 		if(is_null($view_style)) $view_style = CProfile::get('web.overview.view.style',STYLE_TOP);
 
@@ -1210,10 +1217,12 @@
 // COpt::profiling_stop('prepare_data');
 // COpt::profiling_start('prepare_table');
 
+		$css = getUserTheme($USER_DETAILS);
+		$vTextColor = ($css == 'css_od.css')?'&color=white':'';
 		if($view_style == STYLE_TOP){
 			$header=array(new CCol(S_ITEMS,'center'));
 			foreach($hosts as $hostname){
-				$header = array_merge($header,array(new CImg('vtext.php?text='.$hostname)));
+				$header = array_merge($header,array(new CImg('vtext.php?text='.$hostname.$vTextColor)));
 			}
 
 			$table->SetHeader($header,'vertical_header');
@@ -1230,7 +1239,7 @@
 		else{
 			$header=array(new CCol(S_HOSTS,'center'));
 			foreach($items as $descr => $ithosts){
-				$header = array_merge($header,array(new CImg('vtext.php?text='.$descr)));
+				$header = array_merge($header,array(new CImg('vtext.php?text='.$descr.$vTextColor)));
 			}
 
 			$table->SetHeader($header,'vertical_header');
@@ -1295,8 +1304,8 @@
 			}
 		}
 
-//		if($value == '-')	$css_class = 'center';
-		$value_col = new CCol(array($value,$ack),$css_class.' link');
+		if($value != '-')	$value = new CSpan($value,'link');
+		$value_col = new CCol(array($value,$ack),$css_class);
 
 		if(isset($it_ov_menu)){
 			$it_ov_menu  = new CPUMenu($it_ov_menu,170);
@@ -1408,6 +1417,9 @@
 				$housekeeperid = get_dbid('housekeeper','housekeeperid');
 				DBexecute('INSERT INTO housekeeper (housekeeperid,tablename,field,value)'.
 					" VALUES ($housekeeperid, 'trends','itemid',$itemid)");
+				$housekeeperid = get_dbid('housekeeper','housekeeperid');
+				DBexecute('INSERT INTO housekeeper (housekeeperid,tablename,field,value)'.
+					" VALUES ($housekeeperid, 'trends_uint','itemid',$itemid)");
 			}
 			return TRUE;
 		}
@@ -1427,7 +1439,7 @@
 					$db_item["value_type"] == ITEM_VALUE_TYPE_LOG){
 				$lastvalue=$db_item["lastvalue"];
 				if(zbx_strlen($lastvalue) > 20)
-					$lastvalue = substr($lastvalue,0,20)." ...";
+					$lastvalue = zbx_substr($lastvalue,0,20)." ...";
 				$lastvalue = nbsp(htmlspecialchars($lastvalue));
 			}
 			else{
@@ -1591,7 +1603,7 @@
 
 		foreach($arr_of_flex_intervals as $fnum => $flex_interval){
 			if(2 != sscanf($flex_interval, "%d/%29s", $flex_delay, $flex_period)) continue;
-			
+
 			if(($flex_delay < $current_delay) && check_time_period($flex_period, $now)){
 				$current_delay = $flex_delay;
 			}

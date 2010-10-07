@@ -64,8 +64,7 @@ include_once('include/page_header.php');
 		'autologout'=>		array(T_ZBX_INT, O_OPT,	null,	BETWEEN(90,10000), null),
 		'url'=>				array(T_ZBX_STR, O_OPT,	null,	null,		'isset({save})'),
 		'refresh'=>			array(T_ZBX_INT, O_OPT,	null,	BETWEEN(0,3600),'isset({save})'),
-		'rows_per_page'=>	array(T_ZBX_INT, O_OPT,	null,	BETWEEN(0,1000),'isset({save})'),
-		'number_of_hosts'=>	array(T_ZBX_INT, O_OPT,	null,	BETWEEN(0,1000),'isset({save})'),
+		'rows_per_page'=>	array(T_ZBX_INT, O_OPT,	null,	BETWEEN(1,999999),'isset({save})'),
 // Actions
 		'go'=>					array(T_ZBX_STR, O_OPT, P_SYS|P_ACT, NULL, NULL),
 // form
@@ -151,7 +150,6 @@ include_once('include/page_header.php');
 			$user['theme'] = get_request('theme');
 			$user['refresh'] = get_request('refresh');
 			$user['rows_per_page'] = get_request('rows_per_page');
-			$user['number_of_hosts'] = get_request('number_of_hosts');
 			$user['type'] = get_request('user_type');
 //			$user['user_groups'] = get_request('user_groups', array());
 			$user['user_medias'] = get_request('user_medias', array());
@@ -347,7 +345,8 @@ include_once('include/page_header.php');
 
 
 	if(isset($_REQUEST['form'])){
-		$user_wdgt->addItem(insert_user_form(get_request('userid', null)));
+		$userForm = getUserForm(get_request('userid', null));
+		$user_wdgt->addItem($userForm);
 	}
 	else{
 		$form = new CForm(null, 'get');
@@ -356,7 +355,7 @@ include_once('include/page_header.php');
 		$cmbUGrp->addItem(0, S_ALL_S);
 
 		$options = array(
-			'extendoutput' => 1,
+			'output' => API_OUTPUT_EXTEND,
 			'sortfield' => 'name'
 		);
 		$usrgrps = CUserGroup::get($options);
@@ -372,18 +371,6 @@ include_once('include/page_header.php');
 
 		$user_wdgt->addHeader(S_USERS_BIG, $form);
 		$user_wdgt->addHeader($numrows);
-
-// User table
-		$options = array('extendoutput' => 1,
-						'select_usrgrps' => 1,
-						'get_access' => 1,
-						'limit' => ($config['search_limit']+1)
-					);
-		if($_REQUEST['filter_usrgrpid'] > 0){
-			$options['usrgrpids'] = $_REQUEST['filter_usrgrpid'];
-		}
-
-		$users = CUser::get($options);
 
 		$form = new CForm(null,'post');
 		$form->setName('users');
@@ -404,8 +391,21 @@ include_once('include/page_header.php');
 			S_STATUS
 		));
 
+// User table
+		$options = array(
+			'output' => API_OUTPUT_EXTEND,
+			'select_usrgrps' => API_OUTPUT_EXTEND,
+			'get_access' => 1,
+			'limit' => ($config['search_limit']+1)
+		);
+		if($_REQUEST['filter_usrgrpid'] > 0){
+			$options['usrgrpids'] = $_REQUEST['filter_usrgrpid'];
+		}
+
+		$users = CUser::get($options);
+
 // sorting
-		order_page_result($users, getPageSortField('alias'), getPageSortOrder());
+		order_result($users, getPageSortField('alias'), getPageSortOrder());
 		$paging = getPagingLine($users);
 //---------
 
@@ -504,13 +504,6 @@ include_once('include/page_header.php');
 // goButton name is necessary!!!
 		$goButton = new CButton('goButton', S_GO);
 		$goButton->setAttribute('id','goButton');
-
-		$jsLocale = array(
-			'S_CLOSE',
-			'S_NO_ELEMENTS_SELECTED'
-		);
-
-		zbx_addJSLocale($jsLocale);
 
 		zbx_add_post_js('chkbxRange.pageGoName = "group_userid";');
 		$footer = get_table_header(array($goBox, $goButton));

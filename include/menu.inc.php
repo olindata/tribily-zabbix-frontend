@@ -85,9 +85,10 @@ $ZBX_MENU = array(
 				array('url'=>'vtext.php'),
 				array('url'=>'chart3.php'),
 				array('url'=>'imgstore.php'),
-				array('url'=>'search.php')
-				)
-			),
+				array('url'=>'search.php'),
+				array('url'=>'jsrpc.php')
+			)
+	),
 	'cm'=>array(
 			'label'			=> S_INVENTORY,
 			'user_type'		=> USER_TYPE_ZABBIX_USER,
@@ -95,8 +96,8 @@ $ZBX_MENU = array(
 			'default_page_id'	=> 0,
 			'pages'=>array(
 				array('url'=>'hostprofiles.php'	,'label'=>S_HOSTS	)
-				)
-			),
+			)
+	),
 	'reports'=>array(
 			'label'			=> S_REPORTS,
 			'user_type'		=> USER_TYPE_ZABBIX_USER,
@@ -123,8 +124,8 @@ $ZBX_MENU = array(
 					),
 				array('url'=>'popup.php'),
 				array('url'=>'popup_right.php')
-				),
 			),
+	),
 	'config'=>array(
 			'label'			=> S_CONFIGURATION,
 			'user_type'		=> USER_TYPE_ZABBIX_ADMIN,
@@ -137,9 +138,13 @@ $ZBX_MENU = array(
 						'label'=>S_HOST_GROUPS
 					),
 				array(
+						'url'=>'templates.php',
+						'label'=>S_TEMPLATES
+					),
+				array(
 						'url'=>'hosts.php',
 						'label'=>S_HOSTS,
-						'sub_pages'=>array('items.php','triggers.php','graphs.php','templates.php','applications.php','tr_logform.php','tr_testexpr.php','popup_trexpr.php','popup_gitem.php')
+						'sub_pages'=>array('items.php','triggers.php','graphs.php','applications.php','tr_logform.php','tr_testexpr.php','popup_trexpr.php','popup_gitem.php')
 					),
 				array(
 						'url'=>'maintenance.php',
@@ -150,26 +155,27 @@ $ZBX_MENU = array(
 						'label'=>S_WEB,
 						'sub_pages'=>array('popup_httpstep.php')
 					),
-				array('url'=>'actionconf.php'	,'label'=>S_ACTIONS),
+				array('url'=>'actionconf.php',
+						'label'=>S_ACTIONS
+					),
 				array('url'=>'screenconf.php',
-						'label'=>S_SCREENS,
-						'sub_pages'=>array('screenedit.php')
+						'label' => S_SCREENS,
+						'sub_pages' => array('screenedit.php')
+					),
+				array('url'=>'slideconf.php',
+						'label' => S_SLIDES,
 					),
 				array('url'=>'sysmaps.php',
-						'label'=>S_MAPS,
-						'sub_pages'=>array('image.php','sysmap.php','popup_link_tr.php')
+						'label' => S_MAPS,
+						'sub_pages' => array('image.php','sysmap.php','popup_link_tr.php')
 					),
 				array('url'=>'services.php',
 						'label'=>S_IT_SERVICES,
 						'sub_pages'=>array('services_form.php')
 					),
 				array('url' => 'discoveryconf.php', 'label' => S_DISCOVERY),
-				array(	'url' => 'export.php',
-						'label' => S_EXPORT_IMPORT,
-						'sub_pages'=>array('import.php')
-					)
-				)
-			),
+			)
+	),
 	'admin'=>array(
 			'label'			=> S_ADMINISTRATION,
 			'user_type'		=> USER_TYPE_SUPER_ADMIN,
@@ -209,9 +215,6 @@ $ZBX_MENU = array(
 				array('url'=>'report4.php',
 						'label'=>S_NOTIFICATIONS
 					),
-				array('url'=>'customers.php',
-						'label'=>S_CUSTOMERS
-					),
 				array('url'=>'locales.php',
 						'label'=>S_LOCALES
 					),
@@ -219,8 +222,8 @@ $ZBX_MENU = array(
 						'label'=>S_INSTALLATION,
 						'sub_pages'=>array('setup.php','warning.php')
 					)
-				)
-			),
+			)
+	),
 	'login'=>array(
 			'label'			=> S_LOGIN,
 			'user_type'		=> 	0,
@@ -234,8 +237,8 @@ $ZBX_MENU = array(
 	);
 
 
-function zbx_construct_menu(&$main_menu, &$sub_menus) {
-	global $page, $ZBX_MENU, $USER_DETAILS;
+function zbx_construct_menu(&$main_menu, &$sub_menus, &$page) {
+	global $ZBX_MENU, $USER_DETAILS;
 
 	$denyed_page_requested = false;
 
@@ -288,6 +291,7 @@ function zbx_construct_menu(&$main_menu, &$sub_menus) {
 
 			$sub_menu_active = ($page['file'] == $sub_page['url']);
 			$sub_menu_active |= (isset($sub_page['sub_pages']) && str_in_array($page['file'], $sub_page['sub_pages']));
+
 			if($sub_menu_active){
 // PERMISSION CHECK
 				$deny &= (($USER_DETAILS['type'] < $menu['user_type']) || ($USER_DETAILS['type'] < $sub_page['user_type']));
@@ -312,6 +316,7 @@ function zbx_construct_menu(&$main_menu, &$sub_menus) {
 			define('ZBX_NOT_ALLOW_ALL_NODES', 1);
 		}
 //SDI($label.' : '.$show_menu.' : '.$deny);
+
 		if($page_exists && $deny){
 			$denyed_page_requested = true;
 		}
@@ -340,9 +345,7 @@ function zbx_construct_menu(&$main_menu, &$sub_menus) {
 return $denyed_page_requested;
 }
 
-function zbx_define_menu_restrictions(){
-	global $page, $ZBX_MENU;
-
+function zbx_define_menu_restrictions($page, $ZBX_MENU){
 	foreach($ZBX_MENU as $sid => $section){
 		foreach($section['pages'] as $pid => $menu_page) {
 			if (($menu_page['url'] == $page['file']) || (isset($menu_page['sub_pages']) && str_in_array($page['file'], $menu_page['sub_pages']))) {

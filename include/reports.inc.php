@@ -20,12 +20,6 @@
 ?>
 <?php
 
-function show_report2_header($config,&$PAGE_GROUPS, &$PAGE_HOSTS){
-	$form_r = get_report2_header($config,$PAGE_GROUPS, $PAGE_HOSTS);
-
-	show_table_header(S_AVAILABILITY_REPORT_BIG, $form_r);
-}
-
 function get_report2_filter($config,&$PAGE_GROUPS, &$PAGE_HOSTS){
 	global $USER_DETAILS;
 
@@ -40,8 +34,8 @@ function get_report2_filter($config,&$PAGE_GROUPS, &$PAGE_HOSTS){
 	$filterForm->setAttribute('id','zbx_filter');
 
 	$filterForm->addVar('config',$config);
-	$filterForm->addVar('filter_timesince',($_REQUEST['filter_timesince']>0)?$_REQUEST['filter_timesince']:'');
-	$filterForm->addVar('filter_timetill',($_REQUEST['filter_timetill']>0)?$_REQUEST['filter_timetill']:'');
+	$filterForm->addVar('filter_timesince',date('YmdHis', $_REQUEST['filter_timesince']));
+	$filterForm->addVar('filter_timetill', date('YmdHis', $_REQUEST['filter_timetill']));
 
 	$cmbGroups = new CComboBox('filter_groupid',$PAGE_GROUPS['selected'],'javascript: submit();');
 	$cmbHosts = new CComboBox('filter_hostid',$PAGE_HOSTS['selected'],'javascript: submit();');
@@ -207,8 +201,8 @@ function bar_report_form(){
 
 //	$showLegend =
 
-	$report_timesince = get_request('report_timesince',time()-86400);
-	$report_timetill = get_request('report_timetill',time());
+	$report_timesince = $_REQUEST['report_timesince'];
+	$report_timetill = $_REQUEST['report_timetill'];
 
 	$reportForm = new CFormTable(null,null,'get');//,'events.php?report_set=1','POST',null,'sform');
 	$reportForm->setAttribute('name','zbx_report');
@@ -220,8 +214,8 @@ function bar_report_form(){
 
 	$reportForm->addVar('config',$config);
 	$reportForm->addVar('items',$items);
-	$reportForm->addVar('report_timesince',($report_timesince>0)?$report_timesince:'');
-	$reportForm->addVar('report_timetill',($report_timetill>0)?$report_timetill:'');
+	$reportForm->addVar('report_timesince', date('YmdHis', $report_timesince));
+	$reportForm->addVar('report_timetill',  date('YmdHis', $report_timetill));
 
 	$reportForm->addRow(S_TITLE, new CTextBox('title',$title,40));
 	$reportForm->addRow(S_X.SPACE.S_LABEL, new CTextBox('xlabel',$xlabel,40));
@@ -429,8 +423,8 @@ function bar_report_form2(){
 			$periods_table->addRow(array(
 					new CCheckBox('group_pid['.$pid.']'),
 					$caption,
-					date(S_DATE_FORMAT_YMDHMS, $period['report_timesince']),
-					date(S_DATE_FORMAT_YMDHMS, $period['report_timetill']),
+					zbx_date2str(S_REPORTS_BAR_REPORT_DATE_FORMAT, $period['report_timesince']),
+					zbx_date2str(S_REPORTS_BAR_REPORT_DATE_FORMAT, $period['report_timetill']),
 					$color,
 				));
 		}
@@ -520,13 +514,14 @@ function bar_report_form3(){
 	$scaletype = get_request('scaletype', TIMEPERIOD_TYPE_WEEKLY);
 	$avgperiod = get_request('avgperiod', TIMEPERIOD_TYPE_DAILY);
 
-	$report_timesince = get_request('report_timesince',time()-86400);
-	$report_timetill = get_request('report_timetill',time());
+	$report_timesince = get_request('report_timesince',date('YmdHis', time()-86400));
+	$report_timetill = get_request('report_timetill',date('YmdHis'));
 
 	$captions = get_request('captions',array());
 	$items = get_request('items',array());
 
 	$hostids = get_request('hostids', array());
+	$hostids = zbx_toHash($hostids);
 	$showlegend = get_request('showlegend',0);
 
 	$palette = get_request('palette',0);
@@ -541,8 +536,8 @@ function bar_report_form3(){
 		$reportForm->addVar('report_show','show');
 
 	$reportForm->addVar('config',$config);
-	$reportForm->addVar('report_timesince',($report_timesince>0)?$report_timesince:'');
-	$reportForm->addVar('report_timetill',($report_timetill>0)?$report_timetill:'');
+	$reportForm->addVar('report_timesince',date('YmdHis', $report_timesince));
+	$reportForm->addVar('report_timetill',date('YmdHis', $report_timetill));
 
 //	$reportForm->addVar('items',$items); 				//params are set later!!
 //	$reportForm->addVar('periods',$periods);
@@ -556,37 +551,18 @@ function bar_report_form3(){
 
 // GROUPS
 	$groupids = get_request('groupids', array());
-	$group_tb = new CTweenBox($reportForm,'groupids',null,10);
+	$group_tb = new CTweenBox($reportForm,'groupids',$groupids,10);
 
-	$sql_from = '';
-	$sql_where =  'AND '.DBcondition('g.groupid',$groupids);
+	$options = array(
+		'real_hosts' => 1,
+		'output' => 'extend'
+	);
 
-	$sql = 'SELECT DISTINCT g.groupid, g.name '.
-			' FROM hosts h, hosts_groups hg, groups g '.$sql_from.
-			' WHERE hg.groupid=g.groupid'.
-				' AND h.hostid=hg.hostid '.
-				' AND '.DBcondition('h.hostid',$available_hosts).
-				' AND h.status IN ('.HOST_STATUS_MONITORED.','.HOST_STATUS_NOT_MONITORED.') '.
-				$sql_where.
-			' ORDER BY g.name';
-//SDI($sql);
-	$db_groups = DBselect($sql);
-	while($group = DBfetch($db_groups)){
+	$db_groups = CHostGroup::get($options);
+	order_result($db_groups, 'name');
+	foreach($db_groups as $gnum => $group){
 		$groupids[$group['groupid']] = $group['groupid'];
-		$group_tb->addItem($group['groupid'],$group['name'], true);
-	}
-
-	$sql = 'SELECT DISTINCT g.* '.
-			' FROM hosts h, hosts_groups hg, groups g '.
-			' WHERE hg.groupid=g.groupid'.
-				' AND h.hostid=hg.hostid '.
-				' AND '.DBcondition('h.hostid',$available_hosts).
-				' AND '.DBcondition('g.groupid',$groupids,true).
-				' AND h.status IN ('.HOST_STATUS_MONITORED.','.HOST_STATUS_NOT_MONITORED.') '.
-			' ORDER BY g.name';
-	$db_groups = DBselect($sql);
-	while($group = DBfetch($db_groups)){
-		$group_tb->addItem($group['groupid'],$group['name'], false);
+		$group_tb->addItem($group['groupid'],$group['name']);
 	}
 
 	$reportForm->addRow(S_GROUPS, $group_tb->Get(S_SELECTED_GROUPS,S_OTHER.SPACE.S_GROUPS));
@@ -595,66 +571,47 @@ function bar_report_form3(){
 // HOSTS
 //	validate_group(PERM_READ_ONLY,array('real_hosts'),'web.last.conf.groupid');
 
-	$cmbGroups = new CComboBox('groupid',get_request('groupid',0),'submit()');
+	$groupid = get_request('groupid',0);
+	$cmbGroups = new CComboBox('groupid',$groupid,'submit()');
 	$cmbGroups->addItem(0,S_ALL_S);
-	$sql = 'SELECT DISTINCT g.groupid,g.name '.
-			' FROM groups g,hosts_groups hg,hosts h '.
-			' WHERE '.DBcondition('h.hostid',$available_hosts).
-				' AND g.groupid=hg.groupid '.
-				' AND h.hostid=hg.hostid'.
-				' AND h.status IN ('.HOST_STATUS_MONITORED.') '.
-			' ORDER BY g.name';
-
-	$result=DBselect($sql);
-	while($row=DBfetch($result)){
-		$cmbGroups->addItem($row['groupid'],$row['name']);
+	foreach($db_groups as $gnum => $group){
+		$cmbGroups->addItem($group['groupid'],$group['name']);
 	}
 
 	$td_groups = new CCol(array(S_GROUP,SPACE,$cmbGroups));
 	$td_groups->setAttribute('style','text-align: right;');
 
-	$host_tb = new CTweenBox($reportForm,'hostids',null,10);
+	$host_tb = new CTweenBox($reportForm,'hostids',$hostids,10);
 
-	$sql_from = '';
-	$sql_where =  'AND '.DBcondition('h.hostid',$hostids);
+	$options = array(
+		'real_hosts' => 1,
+		'output' => array('hostid', 'host')
+	);
+	if($groupid > 0){
+		$options['groupids'] = $groupid;
+	}
+	$db_hosts = CHost::get($options);
+	$db_hosts = zbx_toHash($db_hosts, 'hostid');
+	order_result($db_hosts, 'host');
 
-	$sql = 'SELECT DISTINCT h.hostid, h.host '.
-			' FROM hosts h '.$sql_from.
-			' WHERE '.DBcondition('h.hostid',$available_hosts).
-				$sql_where.
-				' AND h.status IN ('.HOST_STATUS_MONITORED.','.HOST_STATUS_NOT_MONITORED.') '.
-			' ORDER BY h.host';
-	$db_hosts = DBselect($sql);
-	while($host = DBfetch($db_hosts)){
-		$hostids[$host['hostid']] = $host['hostid'];
-		$host_tb->addItem($host['hostid'],$host['host'], true);
+	foreach($db_hosts as $hnum => $host){
+		$host_tb->addItem($host['hostid'],$host['host']);
 	}
 
-
-	$sql_from = '';
-	$sql_where = '';
-	if(isset($_REQUEST['groupid']) && ($_REQUEST['groupid']>0)){
-		$sql_from .= ', hosts_groups hg ';
-		$sql_where .= ' AND hg.groupid='.$_REQUEST['groupid'].
-						' AND h.hostid=hg.hostid ';
-	}
-
-	$sql = 'SELECT DISTINCT h.* '.
-			' FROM hosts h '.$sql_from.
-			' WHERE '.DBcondition('h.hostid',$available_hosts).
-				' AND '.DBcondition('h.hostid',$hostids,true).
-				' AND h.status IN ('.HOST_STATUS_MONITORED.') '.
-				$sql_where.
-			' ORDER BY h.host';
-	$db_hosts = DBselect($sql);
-	while($host = DBfetch($db_hosts)){
-		$host_tb->addItem($host['hostid'],$host['host'], false);
+	$options = array(
+		'real_hosts' => 1,
+		'output' => array('hostid', 'host'),
+		'hostids' => $hostids,
+	);
+	$db_hosts2 = CHost::get($options);
+	order_result($db_hosts2, 'host');
+	foreach($db_hosts2 as $hnum => $host){
+		if(!isset($db_hosts[$host['hostid']]))
+			$host_tb->addItem($host['hostid'],$host['host']);
 	}
 
 	$reportForm->addRow(S_HOSTS, $host_tb->Get(S_SELECTED_HOSTS,array(S_OTHER.SPACE.S_HOSTS.SPACE.'|'.SPACE.S_GROUP.SPACE,$cmbGroups)));
 // ----------
-
-
 //*/
 // PERIOD
 

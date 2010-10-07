@@ -62,7 +62,7 @@ class CHost extends CZBXAPI{
  * @param boolean $options['select_profile'] select Profile
  * @param int $options['count'] count Hosts, returned column name is rowscount
  * @param string $options['pattern'] search hosts by pattern in Host name
- * @param string $options['extend_pattern'] search hosts by pattern in Host name, ip and DNS
+ * @param string $options['extendPattern'] search hosts by pattern in Host name, ip and DNS
  * @param int $options['limit'] limit selection
  * @param string $options['sortfield'] field to sort by
  * @param string $options['sortorder'] sort order
@@ -82,7 +82,7 @@ class CHost extends CZBXAPI{
 
 		$sql_parts = array(
 			'select' => array('hosts' => 'h.hostid'),
-			'from' => array('hosts h'),
+			'from' => array('hosts' => 'hosts h'),
 			'where' => array(),
 			'group' => array(),
 			'order' => array(),
@@ -92,10 +92,14 @@ class CHost extends CZBXAPI{
 			'nodeids'					=> null,
 			'groupids'					=> null,
 			'hostids'					=> null,
+			'proxyids'					=> null,
 			'templateids'				=> null,
 			'itemids'					=> null,
 			'triggerids'				=> null,
+			'maintenanceids'			=> null,
 			'graphids'					=> null,
+			'dhostids'					=> null,
+			'dserviceids'				=> null,
 			'monitored_hosts'			=> null,
 			'templated_hosts'			=> null,
 			'proxy_hosts'				=> null,
@@ -111,17 +115,21 @@ class CHost extends CZBXAPI{
 			'nopermissions'				=> null,
 // filter
 			'filter'					=> null,
-			'pattern'					=> '',
-			'extend_pattern'			=> null,
+			'startPattern'				=> null,
+			'pattern'					=> null,
+			'extendPattern'				=> null,
+			'excludePattern'			=> null,
 
 // OutPut
 			'output'					=> API_OUTPUT_REFER,
 			'extendoutput'				=> null,
 			'select_groups'				=> null,
-			'select_templates'			=> null,
+			'selectParentTemplates'		=> null,
 			'select_items'				=> null,
 			'select_triggers'			=> null,
 			'select_graphs'				=> null,
+			'select_dhosts'				=> null,
+			'select_dservices'			=> null,
 			'select_applications'		=> null,
 			'select_macros'				=> null,
 			'select_profile'			=> null,
@@ -143,8 +151,8 @@ class CHost extends CZBXAPI{
 			if(!is_null($options['select_groups'])){
 				$options['select_groups'] = API_OUTPUT_EXTEND;
 			}
-			if(!is_null($options['select_templates'])){
-				$options['select_templates'] = API_OUTPUT_EXTEND;
+			if(!is_null($options['selectParentTemplates'])){
+				$options['selectParentTemplates'] = API_OUTPUT_EXTEND;
 			}
 			if(!is_null($options['select_items'])){
 				$options['select_items'] = API_OUTPUT_EXTEND;
@@ -181,26 +189,39 @@ class CHost extends CZBXAPI{
 		else{
 			$permission = $options['editable'] ? PERM_READ_WRITE : PERM_READ_ONLY;
 
-			$sql_parts['from']['hg'] = 'hosts_groups hg';
-			$sql_parts['from']['r'] = 'rights r';
-			$sql_parts['from']['ug'] = 'users_groups ug';
-			$sql_parts['where']['hgh'] = 'hg.hostid=h.hostid';
-			$sql_parts['where'][] = 'r.id=hg.groupid ';
-			$sql_parts['where'][] = 'r.groupid=ug.usrgrpid';
-			$sql_parts['where'][] = 'ug.userid='.$userid;
-			$sql_parts['where'][] = 'r.permission>='.$permission;
-			$sql_parts['where'][] = 'NOT EXISTS( '.
-									' SELECT hgg.groupid '.
-									' FROM hosts_groups hgg, rights rr, users_groups gg '.
-									' WHERE hgg.hostid=hg.hostid '.
-										' AND rr.id=hgg.groupid '.
+			$sql_parts['where'][] = 'EXISTS ('.
+							' SELECT hh.hostid '.
+							' FROM hosts hh, hosts_groups hgg, rights r, users_groups ug '.
+							' WHERE hh.hostid=h.hostid '.
+								' AND hh.hostid=hgg.hostid '.
+								' AND r.id=hgg.groupid '.
+								' AND r.groupid=ug.usrgrpid '.
+								' AND ug.userid='.$userid.
+								' AND r.permission>='.$permission.
+								' AND NOT EXISTS( '.
+									' SELECT hggg.groupid '.
+									' FROM hosts_groups hggg, rights rr, users_groups gg '.
+									' WHERE hggg.hostid=hgg.hostid '.
+										' AND rr.id=hggg.groupid '.
 										' AND rr.groupid=gg.usrgrpid '.
 										' AND gg.userid='.$userid.
-										' AND rr.permission<'.$permission.')';
+										' AND rr.permission<'.$permission.
+								' )) ';
 		}
 
 // nodeids
 		$nodeids = !is_null($options['nodeids']) ? $options['nodeids'] : get_current_nodeid();
+
+// hostids
+		if(!is_null($options['hostids'])){
+			zbx_value2array($options['hostids']);
+			$sql_parts['where']['hostid'] = DBcondition('h.hostid', $options['hostids']);
+
+			if(!$nodeCheck){
+				$nodeCheck = true;
+				$sql_parts['where'][] = DBin_node('h.hostid', $nodeids);
+			}
+		}
 
 // groupids
 		if(!is_null($options['groupids'])){
@@ -209,7 +230,7 @@ class CHost extends CZBXAPI{
 				$sql_parts['select']['groupid'] = 'hg.groupid';
 			}
 
-			$sql_parts['from']['hg'] = 'hosts_groups hg';
+			$sql_parts['from']['hosts_groups'] = 'hosts_groups hg';
 			$sql_parts['where'][] = DBcondition('hg.groupid', $options['groupids']);
 			$sql_parts['where']['hgh'] = 'hg.hostid=h.hostid';
 
@@ -223,15 +244,14 @@ class CHost extends CZBXAPI{
 			}
 		}
 
-// hostids
-		if(!is_null($options['hostids'])){
-			zbx_value2array($options['hostids']);
-			$sql_parts['where']['hostid'] = DBcondition('h.hostid', $options['hostids']);
 
-			if(!$nodeCheck){
-				$nodeCheck = true;
-				$sql_parts['where'][] = DBin_node('h.hostid', $nodeids);
+// proxyids
+		if(!is_null($options['proxyids'])){
+			zbx_value2array($options['proxyids']);
+			if($options['output'] != API_OUTPUT_SHORTEN){
+				$sql_parts['select']['proxy_hostid'] = 'h.proxy_hostid';
 			}
+			$sql_parts['where'][] = DBcondition('h.proxy_hostid', $options['proxyids']);
 		}
 
 // templateids
@@ -241,7 +261,7 @@ class CHost extends CZBXAPI{
 				$sql_parts['select']['templateid'] = 'ht.templateid';
 			}
 
-			$sql_parts['from']['ht'] = 'hosts_templates ht';
+			$sql_parts['from']['hosts_templates'] = 'hosts_templates ht';
 			$sql_parts['where'][] = DBcondition('ht.templateid', $options['templateids']);
 			$sql_parts['where']['hht'] = 'h.hostid=ht.hostid';
 
@@ -262,7 +282,7 @@ class CHost extends CZBXAPI{
 				$sql_parts['select']['itemid'] = 'i.itemid';
 			}
 
-			$sql_parts['from']['i'] = 'items i';
+			$sql_parts['from']['items'] = 'items i';
 			$sql_parts['where'][] = DBcondition('i.itemid', $options['itemids']);
 			$sql_parts['where']['hi'] = 'h.hostid=i.hostid';
 
@@ -279,8 +299,8 @@ class CHost extends CZBXAPI{
 				$sql_parts['select']['triggerid'] = 'f.triggerid';
 			}
 
-			$sql_parts['from']['f'] = 'functions f';
-			$sql_parts['from']['i'] = 'items i';
+			$sql_parts['from']['functions'] = 'functions f';
+			$sql_parts['from']['items'] = 'items i';
 			$sql_parts['where'][] = DBcondition('f.triggerid', $options['triggerids']);
 			$sql_parts['where']['hi'] = 'h.hostid=i.hostid';
 			$sql_parts['where']['fi'] = 'f.itemid=i.itemid';
@@ -298,8 +318,8 @@ class CHost extends CZBXAPI{
 				$sql_parts['select']['graphid'] = 'gi.graphid';
 			}
 
-			$sql_parts['from']['gi'] = 'graphs_items gi';
-			$sql_parts['from']['i'] = 'items i';
+			$sql_parts['from']['graphs_items'] = 'graphs_items gi';
+			$sql_parts['from']['items'] = 'items i';
 			$sql_parts['where'][] = DBcondition('gi.graphid', $options['graphids']);
 			$sql_parts['where']['igi'] = 'i.itemid=gi.itemid';
 			$sql_parts['where']['hi'] = 'h.hostid=i.hostid';
@@ -307,6 +327,53 @@ class CHost extends CZBXAPI{
 			if(!$nodeCheck){
 				$nodeCheck = true;
 				$sql_parts['where'][] = DBin_node('gi.graphid', $nodeids);
+			}
+		}
+
+// dhostids
+		if(!is_null($options['dhostids'])){
+			zbx_value2array($options['dhostids']);
+			if($options['output'] != API_OUTPUT_SHORTEN){
+				$sql_parts['select']['dhostid'] = 'ds.dhostid';
+			}
+
+			$sql_parts['from']['dservices'] = 'dservices ds';
+			$sql_parts['where'][] = DBcondition('ds.dhostid', $options['dhostids']);
+			$sql_parts['where']['dsh'] = 'ds.ip=h.ip';
+
+			if(!is_null($options['groupCount'])){
+				$sql_parts['group']['dhostid'] = 'ds.dhostid';
+			}
+		}
+
+// dserviceids
+		if(!is_null($options['dserviceids'])){
+			zbx_value2array($options['dserviceids']);
+			if($options['output'] != API_OUTPUT_SHORTEN){
+				$sql_parts['select']['dserviceid'] = 'ds.dserviceid';
+			}
+
+			$sql_parts['from']['dservices'] = 'dservices ds';
+			$sql_parts['where'][] = DBcondition('ds.dserviceid', $options['dserviceids']);
+			$sql_parts['where']['dsh'] = 'ds.ip=h.ip';
+
+			if(!is_null($options['groupCount'])){
+				$sql_parts['group']['dserviceid'] = 'ds.dserviceid';
+			}
+		}
+// maintenanceids
+		if(!is_null($options['maintenanceids'])){
+			zbx_value2array($options['maintenanceids']);
+			if($options['output'] != API_OUTPUT_SHORTEN){
+				$sql_parts['select']['maintenanceid'] = 'mh.maintenanceid';
+			}
+
+			$sql_parts['from']['maintenances_hosts'] = 'maintenances_hosts mh';
+			$sql_parts['where'][] = DBcondition('mh.maintenanceid', $options['maintenanceids']);
+			$sql_parts['where']['hmh'] = 'h.hostid=mh.hostid';
+
+			if(!is_null($options['groupCount'])){
+				$sql_parts['group']['maintenanceid'] = 'mh.maintenanceid';
 			}
 		}
 
@@ -325,7 +392,7 @@ class CHost extends CZBXAPI{
 			$sql_parts['where']['status'] = 'h.status IN ('.HOST_STATUS_MONITORED.','.HOST_STATUS_NOT_MONITORED.','.HOST_STATUS_TEMPLATE.')';
 		}
 		else if(!is_null($options['proxy_hosts'])){
-			$sql_parts['where']['status'] = 'h.status IN ('.HOST_STATUS_PROXY.')';
+			$sql_parts['where']['status'] = 'h.status IN ('.HOST_STATUS_PROXY_ACTIVE.','.HOST_STATUS_PROXY_PASSIVE.')';
 		}
 		else{
 			$sql_parts['where']['status'] = 'h.status IN ('.HOST_STATUS_MONITORED.','.HOST_STATUS_NOT_MONITORED.')';
@@ -408,30 +475,46 @@ class CHost extends CZBXAPI{
 
 // pattern
 		if(!zbx_empty($options['pattern'])){
-			if($options['extend_pattern']){
+			$exclude = is_null($options['excludePattern'])?'':' NOT ';
+
+			if(!is_null($options['startPattern'])){
+				$sql_parts['where']['host'] = ' UPPER(h.host) '.$exclude.' LIKE '.zbx_dbstr(zbx_strtoupper($options['pattern']).'%');
+			}
+			else if(!is_null($options['extendPattern'])){
 				$sql_parts['where'][] = ' ( '.
-											'UPPER(h.host) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%').' OR '.
-											'h.ip LIKE '.zbx_dbstr('%'.$options['pattern'].'%').' OR '.
-											'UPPER(h.dns) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%').
+											'UPPER(h.host) '.$exclude.' LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%').' OR '.
+											'h.ip '.$exclude.' LIKE '.zbx_dbstr('%'.$options['pattern'].'%').' OR '.
+											'UPPER(h.dns) '.$exclude.' LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%').
 										' ) ';
 			}
 			else{
-				$sql_parts['where']['host'] = ' UPPER(h.host) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
+				$sql_parts['where']['host'] = ' UPPER(h.host) '.$exclude.' LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
 			}
 		}
+
 
 // filter
 		if(!is_null($options['filter'])){
 			zbx_value2array($options['filter']);
 
 			if(isset($options['filter']['hostid']) && !is_null($options['filter']['hostid'])){
-				$sql_parts['where']['hostid'] = 'h.hostid='.$options['filter']['hostid'];
+				zbx_value2array($options['filter']['hostid']);
+				$sql_parts['where']['hostid'] = DBcondition('h.hostid', $options['filter']['hostid']);
+			}
+
+			if(isset($options['filter']['templateid']) && !is_null($options['filter']['templateid'])){
+				zbx_value2array($options['filter']['templateid']);
+				$sql_parts['where']['templateid'] = DBcondition('h.templateid', $options['filter']['templateid']);
 			}
 
 			if(isset($options['filter']['host']) && !is_null($options['filter']['host'])){
 				zbx_value2array($options['filter']['host']);
-
 				$sql_parts['where']['host'] = DBcondition('h.host', $options['filter']['host'], false, true);
+			}
+
+			if(isset($options['filter']['ip']) && !is_null($options['filter']['ip'])){
+				zbx_value2array($options['filter']['ip']);
+				$sql_parts['where']['ip'] = DBcondition('h.ip', $options['filter']['ip'], false, true);
 			}
 
 			if(isset($options['filter']['maintenance_status']) && !is_null($options['filter']['maintenance_status'])){
@@ -480,7 +563,7 @@ class CHost extends CZBXAPI{
 		if(!empty($sql_parts['order']))		$sql_order.= ' ORDER BY '.implode(',',$sql_parts['order']);
 		$sql_limit = $sql_parts['limit'];
 
-		$sql = 'SELECT DISTINCT '.$sql_select.
+		$sql = 'SELECT '.zbx_db_distinct($sql_parts).' '.$sql_select.
 				' FROM '.$sql_from.
 				' WHERE '.$sql_where.
 				$sql_group.
@@ -507,8 +590,8 @@ class CHost extends CZBXAPI{
 						$result[$host['hostid']]['groups'] = array();
 					}
 
-					if(!is_null($options['select_templates']) && !isset($result[$host['hostid']]['templates'])){
-						$result[$host['hostid']]['templates'] = array();
+					if(!is_null($options['selectParentTemplates']) && !isset($result[$host['hostid']]['parentTemplates'])){
+						$result[$host['hostid']]['parentTemplates'] = array();
 					}
 
 					if(!is_null($options['select_items']) && !isset($result[$host['hostid']]['items'])){
@@ -527,6 +610,14 @@ class CHost extends CZBXAPI{
 						$result[$host['hostid']]['graphs'] = array();
 					}
 
+					if(!is_null($options['select_dhosts']) && !isset($result[$host['hostid']]['dhosts'])){
+						$result[$host['hostid']]['dhosts'] = array();
+					}
+
+					if(!is_null($options['select_dservices']) && !isset($result[$host['hostid']]['dservices'])){
+						$result[$host['hostid']]['dservices'] = array();
+					}
+
 					if(!is_null($options['select_applications']) && !isset($result[$host['hostid']]['applications'])){
 						$result[$host['hostid']]['applications'] = array();
 					}
@@ -534,6 +625,10 @@ class CHost extends CZBXAPI{
 					if(!is_null($options['select_macros']) && !isset($result[$host['hostid']]['macros'])){
 						$result[$host['hostid']]['macros'] = array();
 					}
+
+//					if(!is_null($options['select_maintenances']) && !isset($result[$host['hostid']]['maintenances'])){
+//						$result[$host['hostid']]['maintenances'] = array();
+//					}
 
 // groupids
 					if(isset($host['groupid']) && is_null($options['select_groups'])){
@@ -545,7 +640,7 @@ class CHost extends CZBXAPI{
 					}
 
 // templateids
-					if(isset($host['templateid']) && is_null($options['select_templates'])){
+					if(isset($host['templateid'])){
 						if(!isset($result[$host['hostid']]['templates']))
 							$result[$host['hostid']]['templates'] = array();
 
@@ -579,6 +674,33 @@ class CHost extends CZBXAPI{
 						$result[$host['hostid']]['graphs'][] = array('graphid' => $host['graphid']);
 						unset($host['graphid']);
 					}
+
+// dhostids
+					if(isset($host['dhostid']) && is_null($options['select_dhosts'])){
+						if(!isset($result[$host['hostid']]['dhosts']))
+							$result[$host['hostid']]['dhosts'] = array();
+
+						$result[$host['hostid']]['dhosts'][] = array('dhostid' => $host['dhostid']);
+						unset($host['dhostid']);
+					}
+
+// dserviceids
+					if(isset($host['dserviceid']) && is_null($options['select_dservices'])){
+						if(!isset($result[$host['hostid']]['dservices']))
+							$result[$host['hostid']]['dservices'] = array();
+
+						$result[$host['hostid']]['dservices'][] = array('dserviceid' => $host['dserviceid']);
+						unset($host['dserviceid']);
+					}
+// maintenanceids
+					if(isset($host['maintenanceid'])){
+						if(!isset($result[$host['hostid']]['maintenanceid']))
+							$result[$host['hostid']]['maintenances'] = array();
+
+						$result[$host['hostid']]['maintenances'][] = array('maintenanceid' => $host['maintenanceid']);
+//						unset($host['maintenanceid']);
+					}				
+//---
 
 					$result[$host['hostid']] += $host;
 				}
@@ -630,15 +752,15 @@ Copt::memoryPick();
 		}
 
 // Adding Templates
-		if(!is_null($options['select_templates'])){
+		if(!is_null($options['selectParentTemplates'])){
 			$obj_params = array(
 				'nodeids' => $nodeids,
 				'hostids' => $hostids,
 				'preservekeys' => 1
 			);
 
-			if(is_array($options['select_templates']) || str_in_array($options['select_templates'], $subselects_allowed_outputs)){
-				$obj_params['output'] = $options['select_templates'];
+			if(is_array($options['selectParentTemplates']) || str_in_array($options['selectParentTemplates'], $subselects_allowed_outputs)){
+				$obj_params['output'] = $options['selectParentTemplates'];
 				$templates = CTemplate::get($obj_params);
 
 				if(!is_null($options['limitSelects'])) order_result($templates, 'host');
@@ -652,11 +774,11 @@ Copt::memoryPick();
 							if($count[$host['hostid']] > $options['limitSelects']) continue;
 						}
 
-						$result[$host['hostid']]['templates'][] = &$templates[$templateid];
+						$result[$host['hostid']]['parentTemplates'][] = &$templates[$templateid];
 					}
 				}
 			}
-			else if(API_OUTPUT_COUNT == $options['select_templates']){
+			else if(API_OUTPUT_COUNT == $options['selectParentTemplates']){
 				$obj_params['countOutput'] = 1;
 				$obj_params['groupCount'] = 1;
 
@@ -770,11 +892,11 @@ Copt::memoryPick();
 			if(is_array($options['select_graphs']) || str_in_array($options['select_graphs'], $subselects_allowed_outputs)){
 				$obj_params['output'] = $options['select_graphs'];
 				$graphs = CGraph::get($obj_params);
-				
+
 				if(!is_null($options['limitSelects'])) order_result($graphs, 'name');
 				foreach($graphs as $graphid => $graph){
 					unset($graphs[$graphid]['hosts']);
-					
+
 					foreach($graph['hosts'] as $hnum => $host){
 						if(!is_null($options['limitSelects'])){
 							if(!isset($count[$host['hostid']])) $count[$host['hostid']] = 0;
@@ -798,6 +920,50 @@ Copt::memoryPick();
 						$result[$hostid]['graphs'] = $graphs[$hostid]['rowscount'];
 					else
 						$result[$hostid]['graphs'] = 0;
+				}
+			}
+		}
+
+// Adding discovery hosts
+		if(!is_null($options['select_dhosts'])){
+			$obj_params = array(
+				'nodeids' => $nodeids,
+				'hostids' => $hostids,
+				'nopermissions' => 1,
+				'preservekeys' => 1
+			);
+
+			if(is_array($options['select_dhosts']) || str_in_array($options['select_dhosts'], $subselects_allowed_outputs)){
+				$obj_params['output'] = $options['select_dhosts'];
+				$dhosts = CDHost::get($obj_params);
+
+				if(!is_null($options['limitSelects'])) order_result($dhosts, 'dhostid');
+				foreach($dhosts as $dhostid => $dhost){
+					unset($dhosts[$dhostid]['hosts']);
+
+					foreach($dhost['hosts'] as $hnum => $host){
+						if(!is_null($options['limitSelects'])){
+							if(!isset($count[$host['hostid']])) $count[$host['hostid']] = 0;
+							$count[$host['hostid']]++;
+
+							if($count[$host['hostid']] > $options['limitSelects']) continue;
+						}
+
+						$result[$host['hostid']]['dhosts'][] = &$dhosts[$dhostid];
+					}
+				}
+			}
+			else if(API_OUTPUT_COUNT == $options['select_dhosts']){
+				$obj_params['countOutput'] = 1;
+				$obj_params['groupCount'] = 1;
+
+				$dhosts = CDHost::get($obj_params);
+				$dhosts = zbx_toHash($dhosts, 'hostid');
+				foreach($result as $hostid => $host){
+					if(isset($dhosts[$hostid]))
+						$result[$hostid]['dhosts'] = $dhosts[$hostid]['rowscount'];
+					else
+						$result[$hostid]['dhosts'] = 0;
 				}
 			}
 		}
@@ -877,12 +1043,6 @@ Copt::memoryPick();
 /**
  * Get Host ID by Host name
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param _array $host_data
  * @param string $host_data['host']
  * @return int|boolean
@@ -925,12 +1085,6 @@ Copt::memoryPick();
 /**
  * Add Host
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param _array $hosts multidimensional array with Hosts data
  * @param string $hosts['host'] Host name.
  * @param array $hosts['groups'] array of HostGroup objects with IDs add Host to.
@@ -950,164 +1104,152 @@ Copt::memoryPick();
  * @return boolean
  */
 	public static function create($hosts){
-		$errors = array();
 		$hosts = zbx_toArray($hosts);
 		$hostids = array();
 		$groupids = array();
-		$result = false;
 
+		try{
+			self::BeginTransaction(__METHOD__);
 // CHECK IF HOSTS HAVE AT LEAST 1 GROUP {{{
-		foreach($hosts as $hnum => $host){
-			if(empty($host['groups'])){
-				self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, 'No groups for host [ '.$host['host'].' ]');
-				return false;
-			}
-			$hosts[$hnum]['groups'] = zbx_toArray($hosts[$hnum]['groups']);
+			foreach($hosts as $hnum => $host){
+				if(empty($host['groups'])){
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'No groups for host [ '.$host['host'].' ]');
+				}
+				$hosts[$hnum]['groups'] = zbx_toArray($hosts[$hnum]['groups']);
 
-			foreach($hosts[$hnum]['groups'] as $gnum => $group){
-				$groupids[$group['groupid']] = $group['groupid'];
+				foreach($hosts[$hnum]['groups'] as $gnum => $group){
+					$groupids[$group['groupid']] = $group['groupid'];
+				}
 			}
-		}
 // }}} CHECK IF HOSTS HAVE AT LEAST 1 GROUP
 
 
 // PERMISSIONS {{{
-		$upd_groups = CHostGroup::get(array(
-			'groupids' => $groupids,
-			'editable' => 1,
-			'preservekeys' => 1));
-		foreach($groupids as $gnum => $groupid){
-			if(!isset($upd_groups[$groupid])){
-				self::setError(__METHOD__, ZBX_API_ERROR_PERMISSIONS, 'You do not have enough rights for operation');
-				return false;
+			$upd_groups = CHostGroup::get(array(
+				'groupids' => $groupids,
+				'editable' => 1,
+				'preservekeys' => 1));
+			foreach($groupids as $gnum => $groupid){
+				if(!isset($upd_groups[$groupid])){
+					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSIONS);
+				}
 			}
-		}
 // }}} PERMISSIONS
 
-		self::BeginTransaction(__METHOD__);
-		foreach($hosts as $num => $host){
-			$host_db_fields = array(
-				'host' => null,
-				'port' => 0,
-				'status' => 0,
-				'useip' => 0,
-				'dns' => '',
-				'ip' => '0.0.0.0',
-				'proxy_hostid' => 0,
-				'useipmi' => 0,
-				'ipmi_ip' => '',
-				'ipmi_port' => 623,
-				'ipmi_authtype' => 0,
-				'ipmi_privilege' => 0,
-				'ipmi_username' => '',
-				'ipmi_password' => '',
-			);
 
-			if(!check_db_fields($host_db_fields, $host)){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Wrong fields for host [ '.$host['host'].' ]');
-				break;
+			foreach($hosts as $num => $host){
+				$host_db_fields = array(
+					'host' => null,
+					'port' => 0,
+					'status' => 0,
+					'useip' => 0,
+					'dns' => '',
+					'ip' => '0.0.0.0',
+					'proxy_hostid' => 0,
+					'useipmi' => 0,
+					'ipmi_ip' => '',
+					'ipmi_port' => 623,
+					'ipmi_authtype' => 0,
+					'ipmi_privilege' => 0,
+					'ipmi_username' => '',
+					'ipmi_password' => '',
+				);
+
+				if(!check_db_fields($host_db_fields, $host)){
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Wrong fields for host [ '.$host['host'].' ]');
+				}
+
+				if(!preg_match('/^'.ZBX_PREG_HOST_FORMAT.'$/i', $host['host'])){
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect characters used for Hostname [ '.$host['host'].' ]');
+				}
+				if(!empty($host['dns']) && !preg_match('/^'.ZBX_PREG_DNS_FORMAT.'$/i', $host['dns'])){
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect characters used for DNS [ '.$host['dns'].' ]');
+				}
+
+				if(self::exists(array('host' => $host['host']))){
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_HOST.' [ '.$host['host'].' ] '.S_ALREADY_EXISTS_SMALL);
+				}
+				if(CTemplate::exists(array('host' => $host['host']))){
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_TEMPLATE.' [ '.$host['host'].' ] '.S_ALREADY_EXISTS_SMALL);
+				}
+
+
+				$hostid = get_dbid('hosts', 'hostid');
+				$hostids[] = $hostid;
+				$result = DBexecute('INSERT INTO hosts (hostid, proxy_hostid, host, port, status, useip, dns, ip, disable_until, available,'.
+					'useipmi,ipmi_port,ipmi_authtype,ipmi_privilege,ipmi_username,ipmi_password,ipmi_ip) VALUES ('.
+					$hostid.','.
+					$host['proxy_hostid'].','.
+					zbx_dbstr($host['host']).','.
+					$host['port'].','.
+					$host['status'].','.
+					$host['useip'].','.
+					zbx_dbstr($host['dns']).','.
+					zbx_dbstr($host['ip']).
+					',0,'.
+					HOST_AVAILABLE_UNKNOWN.','.
+					$host['useipmi'].','.
+					$host['ipmi_port'].','.
+					$host['ipmi_authtype'].','.
+					$host['ipmi_privilege'].','.
+					zbx_dbstr($host['ipmi_username']).','.
+					zbx_dbstr($host['ipmi_password']).','.
+					zbx_dbstr($host['ipmi_ip']).')'
+				);
+				if(!$result){
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'DBerror');
+				}
+
+				$host['hostid'] = $hostid;
+				$options = array();
+				$options['hosts'] = $host;
+				$options['groups'] = $host['groups'];
+				if(isset($host['templates']) && !is_null($host['templates']))
+					$options['templates'] = $host['templates'];
+				if(isset($host['macros']) && !is_null($host['macros']))
+					$options['macros'] = $host['macros'];
+
+				$result = CHost::massAdd($options);
+				if(!$result){
+					self::exception();
+				}
+
+			if(isset($host['profile']) && !empty($host['extendedProfile'])){
+
+					$fields = array_keys($host['profile']);
+					$fields = implode(', ', $fields);
+
+					$values = array_map('zbx_dbstr', $host['profile']);
+					$values = implode(', ', $values);
+
+					DBexecute('INSERT INTO hosts_profiles (hostid, '.$fields.') VALUES ('.$hostid.', '.$values.')');
+				}
+
+			if(isset($host['extendedProfile']) && !empty($host['extendedProfile'])){
+					$fields = array_keys($host['extendedProfile']);
+					$fields = implode(', ', $fields);
+
+					$values = array_map('zbx_dbstr', $host['extendedProfile']);
+					$values = implode(', ', $values);
+
+					DBexecute('INSERT INTO hosts_profiles_ext (hostid, '.$fields.') VALUES ('.$hostid.', '.$values.')');
+				}
 			}
 
-			if(!preg_match('/^'.ZBX_PREG_HOST_FORMAT.'$/i', $host['host'])){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Incorrect characters used for Hostname [ '.$host['host'].' ]');
-				break;
-			}
-			if(!empty($dns) && !preg_match('/^'.ZBX_PREG_DNS_FORMAT.'$/i', $host['dns'])){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => 'Incorrect characters used for DNS [ '.$host['dns'].' ]');
-				break;
-			}
-
-			if(self::exists(array('host' => $host['host']))){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => S_HOST.' [ '.$host['host'].' ] '.S_ALREADY_EXISTS_SMALL);
-				break;
-			}
-			if(CTemplate::exists(array('host' => $host['host']))){
-				$result = false;
-				$errors[] = array('errno' => ZBX_API_ERROR_PARAMETERS, 'error' => S_TEMPLATE.' [ '.$host['host'].' ] '.S_ALREADY_EXISTS_SMALL);
-				break;
-			}
-
-			$hostid = get_dbid('hosts', 'hostid');
-			$hostids[] = $hostid;
-			$result = DBexecute('INSERT INTO hosts (hostid, proxy_hostid, host, port, status, useip, dns, ip, disable_until, available,'.
-				'useipmi,ipmi_port,ipmi_authtype,ipmi_privilege,ipmi_username,ipmi_password,ipmi_ip) VALUES ('.
-				$hostid.','.
-				$host['proxy_hostid'].','.
-				zbx_dbstr($host['host']).','.
-				$host['port'].','.
-				$host['status'].','.
-				$host['useip'].','.
-				zbx_dbstr($host['dns']).','.
-				zbx_dbstr($host['ip']).
-				',0,'.
-				HOST_AVAILABLE_UNKNOWN.','.
-				$host['useipmi'].','.
-				$host['ipmi_port'].','.
-				$host['ipmi_authtype'].','.
-				$host['ipmi_privilege'].','.
-				zbx_dbstr($host['ipmi_username']).','.
-				zbx_dbstr($host['ipmi_password']).','.
-				zbx_dbstr($host['ipmi_ip']).')'
-			);
-			if(!$result){
-				break;
-			}
-
-			$host['hostid'] = $hostid;
-			$options = array();
-			$options['hosts'] = $host;
-			$options['groups'] = $host['groups'];
-			if(isset($host['templates']) && !is_null($host['templates']))
-				$options['templates'] = $host['templates'];
-			if(isset($host['macros']) && !is_null($host['macros']))
-				$options['macros'] = $host['macros'];
-
-			$result &= CHost::massAdd($options);
-
-			if(isset($host['profile'])){
-				$fields = array_keys($host['profile']);
-				$fields = implode(', ', $fields);
-
-				$values = array_map('zbx_dbstr', $host['profile']);
-				$values = implode(', ', $values);
-
-				DBexecute('INSERT INTO hosts_profiles (hostid, '.$fields.') VALUES ('.$hostid.', '.$values.')');
-			}
-
-			if(isset($host['extendedProfile'])){
-				$fields = array_keys($host['extendedProfile']);
-				$fields = implode(', ', $fields);
-
-				$values = array_map('zbx_dbstr', $host['extendedProfile']);
-				$values = implode(', ', $values);
-
-				DBexecute('INSERT INTO hosts_profiles_ext (hostid, '.$fields.') VALUES ('.$hostid.', '.$values.')');
-			}
-		}
-
-		$result = self::EndTransaction($result, __METHOD__);
-
-		if($result){
+			self::EndTransaction(true, __METHOD__);
 			return array('hostids' => $hostids);
 		}
-		else{
-			self::setMethodErrors(__METHOD__, $errors);
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
+			$error = $e->getErrors();
+			$error = reset($error);
+			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
 	}
 
 /**
  * Update Host
- *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
  *
  * @param _array $hosts multidimensional array with Hosts data
  * @param string $hosts['host'] Host name.
@@ -1128,13 +1270,11 @@ Copt::memoryPick();
  * @return boolean
  */
 	public static function update($hosts){
-		$errors = array();
-		$result = true;
-
 		$hosts = zbx_toArray($hosts);
 		$hostids = zbx_objectValues($hosts, 'hostid');
 
 		try{
+			self::BeginTransaction(__METHOD__);
 			$options = array(
 				'hostids' => $hostids,
 				'editable' => 1,
@@ -1143,30 +1283,25 @@ Copt::memoryPick();
 			$upd_hosts = self::get($options);
 			foreach($hosts as $gnum => $host){
 				if(!isset($upd_hosts[$host['hostid']])){
-					throw new APIException(ZBX_API_ERROR_PERMISSIONS, 'You do not have enough rights for operation');
+					self::exception(ZBX_API_ERROR_PERMISSIONS, 'You do not have enough rights for operation');
 				}
 			}
-	
-			$transaction = self::BeginTransaction(__METHOD__);
-	
+
 			foreach($hosts as $num => $host){
 				$tmp = $host;
 				$host['hosts'] = $tmp;
-	
-				$result = self::massUpdate($host);
-				if(!$result) throw new APIException(ZBX_API_ERROR_INTERNAL, 'Host update failed');
-			}
-	
-			$result = self::EndTransaction($result, __METHOD__);
 
+				$result = self::massUpdate($host);
+				if(!$result) self::exception(ZBX_API_ERROR_INTERNAL, 'Host update failed');
+			}
+
+			self::EndTransaction(true, __METHOD__);
 			return array('hostids' => $hostids);
 		}
 		catch(APIException $e){
-			if(isset($transaction)) self::EndTransaction(false, __METHOD__);
-
+			self::EndTransaction(false, __METHOD__);
 			$error = $e->getErrors();
 			$error = reset($error);
-
 			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
@@ -1175,74 +1310,59 @@ Copt::memoryPick();
 /**
  * Add Hosts to HostGroups. All Hosts are added to all HostGroups.
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $data
  * @param array $data['groups']
- * @param array $data['hosts']
- * @return boolean
+ * @param array $data['templates']
+ * @param array $data['macros']
+ * @return array
  */
 	public static function massAdd($data){
-		$errors = array();
-		$result = true;
-
-		$hosts = isset($data['hosts']) ? zbx_toArray($data['hosts']) : null;
-		$hostids = is_null($hosts) ? array() : zbx_objectValues($hosts, 'hostid');
+		$data['hosts'] = zbx_toArray($data['hosts']);
 
 		try{
-			$transaction = self::BeginTransaction(__METHOD__);
-	
+			self::BeginTransaction(__METHOD__);
+
 			if(isset($data['groups'])){
 				$options = array(
-					'groups' => zbx_toArray($data['groups']), 
-					'hosts' => zbx_toArray($data['hosts'])
+					'groups' => zbx_toArray($data['groups']),
+					'hosts' => $data['hosts']
 				);
 				$result = CHostGroup::massAdd($options);
+				if(!$result) self::exception();
 			}
-	
+
 			if(isset($data['templates'])){
 				$options = array(
-					'hosts' => zbx_toArray($data['hosts']), 
+					'hosts' => $data['hosts'],
 					'templates' => zbx_toArray($data['templates'])
 				);
 				$result = CTemplate::massAdd($options);
+				if(!$result) self::exception();
 			}
-	
+
 			if(isset($data['macros'])){
 				$options = array(
-					'hosts' => zbx_toArray($data['hosts']), 
+					'hosts' => $data['hosts'],
 					'macros' => $data['macros']
 				);
 				$result = CUserMacro::massAdd($options);
+				if(!$result) self::exception();
 			}
-	
-			$result = self::EndTransaction($result, __METHOD__);
+
+			self::EndTransaction(true, __METHOD__);
+			return array('hostids' => zbx_objectValues($data['hosts'], 'hostid'));
 		}
 		catch(APIException $e){
-			if($transaction) self::EndTransaction(false, __METHOD__);
-
+			self::EndTransaction(false, __METHOD__);
 			$error = $e->getErrors();
 			$error = reset($error);
-
 			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
-
-	return $result;
 	}
 
 /**
  * Mass update hosts
- *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
  *
  * @param _array $hosts multidimensional array with Hosts data
  * @param array $hosts['hosts'] Array of Host objects to update
@@ -1264,42 +1384,40 @@ Copt::memoryPick();
  * @return boolean
  */
 	public static function massUpdate($data){
-		$transaction = false;
-
 		$hosts = zbx_toArray($data['hosts']);
 		$hostids = zbx_objectValues($hosts, 'hostid');
 
 		try{
+			self::BeginTransaction(__METHOD__);
+
 			$options = array(
 				'hostids' => $hostids,
 				'editable' => 1,
-				'extendoutput' => 1,
+				'output' => API_OUTPUT_EXTEND,
 				'preservekeys' => 1,
 			);
 			$upd_hosts = self::get($options);
-
 			foreach($hosts as $hnum => $host){
 				if(!isset($upd_hosts[$host['hostid']])){
-					throw new APIException(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSION);
+					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSION);
 				}
 			}
 
 // CHECK IF HOSTS HAVE AT LEAST 1 GROUP {{{
 			if(isset($data['groups']) && empty($data['groups'])){
-				throw new APIException(ZBX_API_ERROR_PARAMETERS, 'No groups for hosts');
+				self::exception(ZBX_API_ERROR_PARAMETERS, 'No groups for hosts');
 			}
 // }}} CHECK IF HOSTS HAVE AT LEAST 1 GROUP
 
-			$transaction = self::BeginTransaction(__METHOD__);
 
 // UPDATE HOSTS PROPERTIES {{{
 			if(isset($data['host'])){
 				if(count($hosts) > 1){
-					throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot mass update host name');
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot mass update host name');
 				}
 
 				$cur_host = reset($hosts);
-				
+
 				$options = array(
 					'filter' => array(
 						'host' => $cur_host['host']),
@@ -1308,19 +1426,17 @@ Copt::memoryPick();
 					'nopermissions' => 1
 				);
 				$host_exists = self::get($options);
-				
 				$host_exists = reset($host_exists);
-
 				if(!empty($host_exists) && ($host_exists['hostid'] != $cur_host['hostid'])){
-					throw new APIException(ZBX_API_ERROR_PARAMETERS, S_HOST.' [ '.$data['host'].' ] '.S_ALREADY_EXISTS_SMALL);
-				}				
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_HOST.' [ '.$data['host'].' ] '.S_ALREADY_EXISTS_SMALL);
+				}
 			}
 
 			if(isset($data['host']) && !preg_match('/^'.ZBX_PREG_HOST_FORMAT.'$/i', $data['host'])){
-				throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Incorrect characters used for Hostname [ '.$data['host'].' ]');
+				self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect characters used for Hostname [ '.$data['host'].' ]');
 			}
-			if(isset($data['dns']) && !empty($dns) && !preg_match('/^'.ZBX_PREG_DNS_FORMAT.'$/i', $data['dns'])){
-				throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Incorrect characters used for DNS [ '.$data['dns'].' ]');
+			if(isset($data['dns']) && !empty($data['dns']) && !preg_match('/^'.ZBX_PREG_DNS_FORMAT.'$/i', $data['dns'])){
+				self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect characters used for DNS [ '.$data['dns'].' ]');
 			}
 
 			$sql_set = array();
@@ -1351,7 +1467,7 @@ Copt::memoryPick();
 // UPDATE HOSTGROUPS LINKAGE {{{
 			if(isset($data['groups']) && !is_null($data['groups'])){
 				$data['groups'] = zbx_toArray($data['groups']);
-				
+
 				$host_groups = CHostGroup::get(array('hostids' => $hostids));
 				$host_groupids = zbx_objectValues($host_groups, 'groupid');
 				$new_groupids = zbx_objectValues($data['groups'], 'groupid');
@@ -1361,7 +1477,7 @@ Copt::memoryPick();
 				if(!empty($groups_to_add)){
 					$result = self::massAdd(array('hosts' => $hosts, 'groups' => $groups_to_add));
 					if(!$result){
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Can\'t add group');
+						self::exception(ZBX_API_ERROR_PARAMETERS, 'Can\'t add group');
 					}
 				}
 
@@ -1370,7 +1486,7 @@ Copt::memoryPick();
 				if(!empty($groups_to_del)){
 					$result = self::massRemove(array('hosts' => $hosts, 'groups' => $groups_to_del));
 					if(!$result){
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Can\'t remove group');
+						self::exception(ZBX_API_ERROR_PARAMETERS, 'Can\'t remove group');
 					}
 				}
 			}
@@ -1383,7 +1499,7 @@ Copt::memoryPick();
 				foreach($data['templates_clear'] as $tpl){
 					$result = unlink_template($hostid, $tpl['templateid'], false);
 					if(!$result){
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot unlink template [ '.$tpl['templateid'].' ]');
+						self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot unlink template [ '.$tpl['templateid'].' ]');
 					}
 					$cleared_templateids[] = $tpl['templateid'];
 				}
@@ -1402,13 +1518,13 @@ Copt::memoryPick();
 				if(!empty($templates_to_del)){
 					$result = self::massRemove(array('hosts' => $hosts, 'templates' => $templates_to_del));
 					if(!$result){
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, S_CANNOT_UNLINK_TEMPLATE);
+						self::exception(ZBX_API_ERROR_PARAMETERS, S_CANNOT_UNLINK_TEMPLATE);
 					}
 				}
-				
+
 				$result = self::massAdd(array('hosts' => $hosts, 'templates' => $new_templateids));
 				if(!$result){
-					throw new APIException(ZBX_API_ERROR_PARAMETERS, S_CANNOT_LINK_TEMPLATE);
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_CANNOT_LINK_TEMPLATE);
 				}
 			}
 // }}} UPDATE TEMPLATE LINKAGE
@@ -1416,7 +1532,7 @@ Copt::memoryPick();
 
 // UPDATE MACROS {{{
 			if(isset($data['macros']) && !is_null($data['macros'])){
-				$host_macros = CUserMacro::get(array('hostids' => $hostids, 'extendoutput' => 1));
+				$host_macros = CUserMacro::get(array('hostids' => $hostids, 'output' => API_OUTPUT_EXTEND,));
 
 				$macros_to_del = array();
 				foreach($host_macros as $hmacro){
@@ -1434,22 +1550,20 @@ Copt::memoryPick();
 				if(!empty($macros_to_del)){
 					$result = self::massRemove(array('hosts' => $hosts, 'macros' => $macros_to_del));
 					if(!$result){
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Can\'t remove macro');
+						self::exception(ZBX_API_ERROR_PARAMETERS, 'Can\'t remove macro');
 					}
 				}
 
 				$result = CUsermacro::massUpdate(array('hosts' => $hosts, 'macros' => $data['macros']));
 				if(!$result){
-					throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot update macro');
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot update macro');
 				}
 
 				$result = self::massAdd(array('hosts' => $hosts, 'macros' => $data['macros']));
 				if(!$result){
-					throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot add macro');
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot add macro');
 				}
 			}
-
-
 // }}} UPDATE MACROS
 
 
@@ -1458,7 +1572,7 @@ Copt::memoryPick();
 				if(empty($data['profile'])){
 					$sql = 'DELETE FROM hosts_profiles WHERE '.DBcondition('hostid', $hostids);
 					if(!DBexecute($sql))
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot delete profile');
+						self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot delete profile');
 				}
 				else{
 					$existing_profiles = array();
@@ -1478,11 +1592,10 @@ Copt::memoryPick();
 					foreach($hostids_without_profile as $hostid){
 						$sql = 'INSERT INTO hosts_profiles (hostid, '.$fields.') VALUES ('.$hostid.', '.$values.')';
 						if(!DBexecute($sql))
-							throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot create profile');
+							self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot create profile');
 					}
 
 					if(!empty($existing_profiles)){
-
 						$host_profile_fields = array('devicetype', 'name', 'os', 'serialno', 'tag','macaddress', 'hardware', 'software',
 							'contact', 'location', 'notes');
 						$sql_set = array();
@@ -1492,7 +1605,7 @@ Copt::memoryPick();
 
 						$sql = 'UPDATE hosts_profiles SET ' . implode(', ', $sql_set) . ' WHERE '.DBcondition('hostid', $existing_profiles);
 						if(!DBexecute($sql))
-							throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot update profile');
+							self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot update profile');
 					}
 				}
 			}
@@ -1504,13 +1617,13 @@ Copt::memoryPick();
 				if(empty($data['extendedProfile'])){
 					$sql = 'DELETE FROM hosts_profiles_ext WHERE '.DBcondition('hostid', $hostids);
 					if(!DBexecute($sql))
-						throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot delete extended profile');
+						self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot delete extended profile');
 				}
 				else{
 					$existing_profiles = array();
 					$existing_profiles_db = DBselect('SELECT hostid FROM hosts_profiles_ext WHERE '.DBcondition('hostid', $hostids));
 					while($existing_profile = DBfetch($existing_profiles_db)){
-						$existing_profiles[] = $existing_profile;
+						$existing_profiles[] = $existing_profile['hostid'];
 					}
 
 					$hostids_without_profile = array_diff($hostids, $existing_profiles);
@@ -1524,7 +1637,7 @@ Copt::memoryPick();
 					foreach($hostids_without_profile as $hostid){
 						$sql = 'INSERT INTO hosts_profiles_ext (hostid, '.$fields.') VALUES ('.$hostid.', '.$values.')';
 						if(!DBexecute($sql))
-							throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot create extended profile');
+							self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot create extended profile');
 					}
 
 					if(!empty($existing_profiles)){
@@ -1540,30 +1653,25 @@ Copt::memoryPick();
 							'poc_2_email','poc_2_phone_1','poc_2_phone_2','poc_2_cell','poc_2_screen','poc_2_notes');
 
 						$sql_set = array();
-						foreach($host_profile_fields as $field){
+						foreach($host_profile_ext_fields as $field){
 							if(isset($data['extendedProfile'][$field])) $sql_set[] = $field.'='.zbx_dbstr($data['extendedProfile'][$field]);
 						}
 
 						$sql = 'UPDATE hosts_profiles_ext SET ' . implode(', ', $sql_set) . ' WHERE '.DBcondition('hostid', $existing_profiles);
 						if(!DBexecute($sql))
-							throw new APIException(ZBX_API_ERROR_PARAMETERS, 'Cannot update extended profile');
+							self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot update extended profile');
 					}
 				}
 			}
 // }}} EXTENDED PROFILE
 
-
 			self::EndTransaction(true, __METHOD__);
-
-			$upd_hosts = self::get(array('hostids' => $hostids, 'extendoutput' => 1, 'nopermissions' => 1));
-			return $upd_hosts;
+			return array('hostids' => $hostids);
 		}
 		catch(APIException $e){
-			if($transaction) self::EndTransaction(false, __METHOD__);
-
+			self::EndTransaction(false, __METHOD__);
 			$error = $e->getErrors();
 			$error = reset($error);
-
 			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
@@ -1572,50 +1680,53 @@ Copt::memoryPick();
 /**
  * remove Hosts to HostGroups. All Hosts are added to all HostGroups.
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $data
- * @param array $data['groups']
  * @param array $data['hosts']
- * @return boolean
+ * @param array $data['templates']
+ * @param array $data['macros']
+ * @return array
  */
 	public static function massRemove($data){
-		$errors = array();
-		$result = true;
+		$data['hosts'] = zbx_toArray($data['hosts']);
 
-		$hosts = isset($data['hosts']) ? zbx_toArray($data['hosts']) : null;
-		$hostids = is_null($hosts) ? array() : zbx_objectValues($hosts, 'hostid');
+		try{
+			self::BeginTransaction(__METHOD__);
 
-		self::BeginTransaction(__METHOD__);
+			if(isset($data['groups'])){
+				$options = array(
+					'hosts' => $data['hosts'],
+					'groups' => zbx_toArray($data['groups'])
+				);
+				$result = CHostGroup::massRemove($options);
+				if(!$result) self::exception();
+			}
 
-		if(isset($data['groups'])){
-			$options = array('groups' => zbx_toArray($data['groups']), 'hosts' => zbx_toArray($data['hosts']));
-			$result = CHostGroup::massRemove($options);
+			if(isset($data['templates'])){
+				$options = array(
+					'hosts' => $data['hosts'],
+					'templates' => zbx_toArray($data['templates'])
+				);
+				$result = CTemplate::massRemove($options);
+				if(!$result) self::exception();
+			}
+
+			if(isset($data['macros'])){
+				$options = array(
+					'hosts' => $data['hosts'],
+					'macros' => $data['macros']
+				);
+				$result = CUserMacro::massRemove($options);
+				if(!$result) self::exception();
+			}
+
+			self::EndTransaction(true, __METHOD__);
+			return array('hostids' => zbx_objectValues($data['hosts'], 'hostid'));
 		}
-
-		if(isset($data['templates'])){
-			$options = array('hosts' => zbx_toArray($data['hosts']), 'templates' => zbx_toArray($data['templates']));
-			$result = CTemplate::massRemove($options);
-		}
-
-		if(isset($data['macros'])){
-			$options = array('hosts' => zbx_toArray($data['hosts']), 'macros' => $data['macros']);
-			$result = CUserMacro::massRemove($options);
-		}
-
-
-		$result = self::EndTransaction($result, __METHOD__);
-
-
-		if($result !== false){
-			return $result;
-		}
-		else{
-			self::setMethodErrors(__METHOD__, $errors);
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
+			$error = $e->getErrors();
+			$error = reset($error);
+			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
 	}
@@ -1623,65 +1734,44 @@ Copt::memoryPick();
 /**
  * Delete Host
  *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
  * @param array $hosts
  * @param array $hosts[0, ...]['hostid'] Host ID to delete
  * @return array|boolean
  */
-	public static function delete($hosts){
-		$hosts = zbx_toArray($hosts);
-		$hostids = array();
+	public static function delete($hostids){
+		$hostids = zbx_toArray($hostids);
+		if(empty($hostids)) return true;
 
-		$options = array(
-			'hostids'=> zbx_objectValues($hosts, 'hostid'),
-			'editable'=>1,
-			'extendoutput'=>1,
-			'preservekeys'=>1
-		);
-		$del_hosts = self::get($options);
-		if(empty($del_hosts)){
-			self::setError(__METHOD__, ZBX_API_ERROR_PERMISSIONS, 'Host does not exist');
-			return false;
-		}
+		try{
+			self::BeginTransaction(__METHOD__);
 
-		foreach($hosts as $num => $host){
-			if(!isset($del_hosts[$host['hostid']])){
-				self::setError(__METHOD__, ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSION);
-				return false;
+			$options = array(
+				'hostids' => $hostids,
+				'editable' => 1,
+				'output' => API_OUTPUT_SHORTEN,
+				'preservekeys' => 1,
+			);
+			$del_hosts = self::get($options);
+			foreach($hostids as $hostid){
+				if(!isset($del_hosts[$hostid])){
+					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSION);
+				}
 			}
 
-			$hostids[] = $host['hostid'];
-			//add_audit(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_HOST, 'Host ['.$host['host'].']');
-		}
-
-		self::BeginTransaction(__METHOD__);
-		if(!empty($hostids)){
 			$result = delete_host($hostids, false);
-		}
-		else{
-			self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, 'Empty input parameter');
-			$result = false;
-		}
+			if(!$result) self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot delete host');
 
-		$result = self::EndTransaction($result, __METHOD__);
-
-		if($result){
-			return array('hostids' => $hostids);
+			self::EndTransaction(true, __METHOD__);
+			return true;
 		}
-		else{
-			self::setError(__METHOD__);
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
+			$error = $e->getErrors();
+			$error = reset($error);
+			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
 	}
-
-
-
-
 
 }
 ?>

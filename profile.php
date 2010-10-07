@@ -19,16 +19,19 @@
 **/
 ?>
 <?php
-	require_once('include/config.inc.php');
-	require_once('include/users.inc.php');
-	require_once('include/forms.inc.php');
-	require_once('include/media.inc.php');
+require_once('include/config.inc.php');
+require_once('include/users.inc.php');
+require_once('include/forms.inc.php');
+require_once('include/media.inc.php');
 
-	$page['title'] = 'S_USER_PROFILE';
-	$page['file'] = 'profile.php';
-	$page['hist_arg'] = array();
+$page['title'] = 'S_USER_PROFILE';
+$page['file'] = 'profile.php';
+$page['hist_arg'] = array();
+$page['scripts'] = array('class.cviewswitcher.js');
 
-include_once 'include/page_header.php';
+ob_start();
+
+include_once('include/page_header.php');
 
 ?>
 <?php
@@ -47,13 +50,15 @@ $fields=array(
 	'autologout'=>		array(T_ZBX_INT, O_OPT,	null, BETWEEN(90,10000), null),
 	'url'=>				array(T_ZBX_STR, O_OPT,	null, null, 'isset({save})'),
 	'refresh'=>			array(T_ZBX_INT, O_OPT,	null, BETWEEN(0,3600), 'isset({save})'),
-	'rows_per_page'=>	array(T_ZBX_INT, O_OPT,	null, BETWEEN(1,1000), 'isset({save})'),
+	'rows_per_page'=>	array(T_ZBX_INT, O_OPT,	null, BETWEEN(1,999999), 'isset({save})'),
 	'change_password'=>	array(T_ZBX_STR, O_OPT,	null, null, null),
 	'user_medias'=>		array(T_ZBX_STR, O_OPT,	null, NOT_EMPTY, null),
 	'user_medias_to_del'=>	array(T_ZBX_STR, O_OPT,	null, DB_ID, null),
 	'new_media'=>		array(T_ZBX_STR, O_OPT,	null, null, null),
 	'enable_media'=>	array(T_ZBX_INT, O_OPT,	null, null, null),
 	'disable_media'=>	array(T_ZBX_INT, O_OPT,	null, null, null),
+	'messages'=>		array(T_ZBX_STR, O_OPT,	null, null, null),
+
 /* actions */
 	'save'=>			array(T_ZBX_STR, O_OPT,	P_SYS|P_ACT, null, null),
 	'cancel'=>			array(T_ZBX_STR, O_OPT,	P_SYS, null, null),
@@ -71,17 +76,17 @@ $fields=array(
 		$_REQUEST['user_medias'] = get_request('user_medias', array());
 		array_push($_REQUEST['user_medias'], $_REQUEST['new_media']);
 	}
-	elseif(isset($_REQUEST['user_medias']) && isset($_REQUEST['enable_media'])){
+	else if(isset($_REQUEST['user_medias']) && isset($_REQUEST['enable_media'])){
 		if(isset($_REQUEST['user_medias'][$_REQUEST['enable_media']])){
 			$_REQUEST['user_medias'][$_REQUEST['enable_media']]['active'] = 0;
 		}
 	}
-	elseif(isset($_REQUEST['user_medias']) && isset($_REQUEST['disable_media'])){
+	else if(isset($_REQUEST['user_medias']) && isset($_REQUEST['disable_media'])){
 		if(isset($_REQUEST['user_medias'][$_REQUEST['disable_media']])){
 			$_REQUEST['user_medias'][$_REQUEST['disable_media']]['active'] = 1;
 		}
 	}
-	elseif(isset($_REQUEST['del_user_media'])){
+	else if(isset($_REQUEST['del_user_media'])){
 		$user_medias_to_del = get_request('user_medias_to_del', array());
 		foreach($user_medias_to_del as $mediaid){
 			if(isset($_REQUEST['user_medias'][$mediaid]))
@@ -90,26 +95,22 @@ $fields=array(
 	}
 
 //Primary Actions
-	elseif(isset($_REQUEST['cancel'])){
+	else if(isset($_REQUEST['cancel'])){
 		$url = CProfile::get('web.menu.view.last', 'index.php');
-		redirect($url);
+		jsRedirect($url);
 	}
-	elseif(isset($_REQUEST['save'])){
-		$config = select_config();		
-		$auth_type = isset($_REQUEST['userid']) ? get_user_system_auth($_REQUEST['userid']) : $config['authentication_type'];
+	else if(isset($_REQUEST['save'])){
+		$auth_type = get_user_system_auth($USER_DETAILS['userid']);
 		
-		if(isset($_REQUEST['userid']) && (ZBX_AUTH_INTERNAL != $auth_type)){
+		if(ZBX_AUTH_INTERNAL != $auth_type){
 			$_REQUEST['password1'] = $_REQUEST['password2'] = null;
-		}
-		else if(!isset($_REQUEST['userid']) && (ZBX_AUTH_INTERNAL != $auth_type)){
-			$_REQUEST['password1'] = $_REQUEST['password2'] = 'zabbix';
 		}
 		else{
 			$_REQUEST['password1'] = get_request('password1', null);
 			$_REQUEST['password2'] = get_request('password2', null);
 		}
 		
-		if($_REQUEST['password1'] != $_REQUEST['password2']) {
+		if($_REQUEST['password1'] != $_REQUEST['password2']){
 			show_error_message(S_CANNOT_UPDATE_USER_BOTH_PASSWORDS);
 		}
 		else if(isset($_REQUEST['password1']) && ($USER_DETAILS['alias']==ZBX_GUEST_USER) && !zbx_empty($_REQUEST['password1'])) {
@@ -118,8 +119,7 @@ $fields=array(
 		else if(isset($_REQUEST['password1']) && ($USER_DETAILS['alias']!=ZBX_GUEST_USER) && zbx_empty($_REQUEST['password1'])) {
 			show_error_message(S_PASSWORD_SHOULD_NOT_BE_EMPTY);
 		}
-		else {
-
+		else{
 			$user = array();
 			$user['userid'] = $USER_DETAILS['userid'];
 //			$user['name'] = $USER_DETAILS['name'];
@@ -137,7 +137,15 @@ $fields=array(
 			$user['user_groups'] = null;
 			$user['user_medias'] = get_request('user_medias', array());
 
+			$messages = get_request('messages', array());
+			if(!isset($messages['enabled'])) $messages['enabled'] = 0;
+			if(!isset($messages['sounds.recovery'])) $messages['sounds.recovery'] = 0;
+			if(!isset($messages['triggers.recovery'])) $messages['triggers.recovery'] = 0;
+			if(!isset($messages['triggers.severities'])) $messages['triggers.severities'] = array();
+
 			DBstart();
+			updateMessageSettings($messages);
+			
 			$result = CUser::updateProfile($user);
 			if($result && ($USER_DETAILS['type'] > USER_TYPE_ZABBIX_USER)){
 				$data = array(
@@ -150,21 +158,33 @@ $fields=array(
 			$result = DBend($result);
 			if(!$result) error(CUser::resetErrors());
 
-			show_messages($result, S_USER_UPDATED, S_CANNOT_UPDATE_USER);
-
-			if($result)
+			if($result){
 				add_audit(AUDIT_ACTION_UPDATE,AUDIT_RESOURCE_USER,
-					'User alias ['.$USER_DETAILS['alias'].
-					'] name ['.$USER_DETAILS['name'].'] surname ['.
-					$USER_DETAILS['surname'].'] profile id ['.$USER_DETAILS['userid'].']');
+					'User alias ['.$USER_DETAILS['alias'].'] Name ['.$USER_DETAILS['name'].']'.
+					' Surname ['.$USER_DETAILS['surname'].'] profile id ['.$USER_DETAILS['userid'].']');
+
+				$url = CProfile::get('web.paging.lastpage', 'profile.php');
+				
+				ob_end_clean();
+				redirect($url);
+			}
+			else{
+				show_messages($result, S_USER_UPDATED, S_CANNOT_UPDATE_USER);
+			}
 		}
 	}
+ob_end_flush();
 ?>
 <?php
 	$profile_wdgt = new CWidget();
 	$profile_wdgt->addPageHeader(S_USER_PROFILE_BIG.' : '.$USER_DETAILS['name'].' '.$USER_DETAILS['surname']);
-	$profile_wdgt->addItem(insert_user_form($USER_DETAILS['userid'],1));
-	$profile_wdgt->show();
 
-include_once ('include/page_footer.php');
+	$profileForm = getUserForm($USER_DETAILS['userid'],1);
+	$profile_wdgt->addItem($profileForm);
+	$profile_wdgt->show();
+?>
+<?php
+
+include_once('include/page_footer.php');
+
 ?>

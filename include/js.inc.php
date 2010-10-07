@@ -62,26 +62,6 @@ function zbx_addJSLocale($to_translate){
 	}
 }
 
-function get_js_sizeable_graph($dom_graph_id,$url){
-
-return new CJSscript('
-	<script language="JavaScript" type="text/javascript">
-	<!--
-		A_SBOX["'.$dom_graph_id.'"] = new Object;
-		A_SBOX["'.$dom_graph_id.'"].shiftT = 36;
-		A_SBOX["'.$dom_graph_id.'"].shiftL = 100;
-
-		var ZBX_G_WIDTH;
-		if(window.innerWidth) ZBX_G_WIDTH=window.innerWidth;
-		else ZBX_G_WIDTH=document.body.clientWidth;
-
-		ZBX_G_WIDTH-= 160;
-
-		insert_sizeable_graph('.zbx_jsvalue($dom_graph_id).','.zbx_jsvalue($url).');
-	-->
-	</script>');
-}
-
 function inseret_javascript_for_editable_combobox(){
 	if(defined('EDITABLE_COMBOBOX_SCRIPT_INSERTTED')) return;
 	define('EDITABLE_COMBOBOX_SCRIPT_INSERTTED', 1);
@@ -97,7 +77,7 @@ function inseret_javascript_for_editable_combobox(){
 
 		opt = document.createElement("option");
 		opt.value = -1;
-		opt.text = "(other ...)";
+		opt.text = "('.S_OTHER_SMALL.' ...)";
 
 		if(!obj.options.add)
 			obj.insertBefore(opt, obj.options.item(0));
@@ -135,18 +115,17 @@ function insert_show_color_picker_javascript(){
 	if($SHOW_COLOR_PICKER_SCRIPT_ISERTTED) return;
 	$SHOW_COLOR_PICKER_SCRIPT_ISERTTED = true;
 
-	$table = '';
+	$table = new CTable();
 
-	$table .= '<table cellspacing="0" cellpadding="1">';
-	$table .= '<tr>';
-	/* gray colors */
+// gray colors
+	$row = array();
 	foreach(array('0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F') as $c){
 		$color = $c.$c.$c.$c.$c.$c;
-		$table .= '<td>'.unpack_object(new CColorCell(null, $color, 'set_color(\\\''.$color.'\\\')')).'</td>';
+		$row[] = new CColorCell(null, $color, 'set_color("'.$color.'");');
 	}
-	$table .= '</tr>';
+	$table->addRow($row);
 
-	/* other colors */
+// other colors
 	$colors = array(
 		array('r' => 0, 'g' => 0, 'b' => 1),
 		array('r' => 0, 'g' => 1, 'b' => 0),
@@ -154,7 +133,7 @@ function insert_show_color_picker_javascript(){
 		array('r' => 0, 'g' => 1, 'b' => 1),
 		array('r' => 1, 'g' => 0, 'b' => 1),
 		array('r' => 1, 'g' => 1, 'b' => 0)
-		);
+	);
 
 	$brigs  = array(
 		array(0 => '0', 1 => '3'),
@@ -176,27 +155,27 @@ function insert_show_color_picker_javascript(){
 		);
 
 	foreach($colors as $c){
-		$table .= '<tr>';
+		$row = array();
 		foreach($brigs as $br){
 			$r = $br[$c['r']];
 			$g = $br[$c['g']];
 			$b = $br[$c['b']];
 
 			$color = $r.$r.$g.$g.$b.$b;
-
-			$table .= '<td>'.unpack_object(new CColorCell(null, $color, 'set_color(\\\''.$color.'\\\')')).'</td>';
+			$row[] = new CColorCell(null, $color, 'set_color("'.$color.'");');
 		}
-		$table .= '</tr>';
+		$table->addRow($row);
 	}
-	$table .= '</table>';
-	$cancel = '<span onclick="javascript:hide_color_picker();" class="link">'.S_CANCEL.'</span>';
 
+	$cancel = new CSpan(S_CANCEL, 'link');
+	$cancel->setAttribute('onclick', 'javascript:hide_color_picker();');
 
 	$script = 'var color_picker = null;
 				var curr_lbl = null;
 				var curr_txt = null;'."\n";
 
-	$script.= "var color_table = '".$table.$cancel."'\n";
+	$tmp = array($table, $cancel);
+	$script.= "var color_table = ".zbx_jsvalue(unpack_object($tmp))."\n";
 	insert_js($script);
 
 	zbx_add_post_js('create_color_picker();');
@@ -272,7 +251,7 @@ function insert_javascript_for_visibilitybox(){
 				obj = new Array(document.getElementById(obj_name));
 			}
 
-			if((obj.length <= 0) || is_null(obj[0])) throw "Can not find objects with name [" + obj_name +"]";
+			if((obj.length <= 0) || is_null(obj[0])) throw "'.S_CANNOT_FIND_OBJECTS_WITH_NAME.' [" + obj_name +"]";
 
 			for(i = obj.length-1; i>=0; i--){
 				if(replace_to && replace_to != ""){
@@ -288,7 +267,7 @@ function insert_javascript_for_visibilitybox(){
 							new_obj.setAttribute("id",obj[i].id);
 						}
 						catch(e){
-							throw "Can not create new element";
+							throw "'.S_CANNOT_CREATE_NEW_ELEMENT.'";
 						}
 
 						new_obj.style.textDecoration = "none";
@@ -310,32 +289,8 @@ function insert_javascript_for_visibilitybox(){
 	insert_js($js);
 }
 
-function redirect($url,$timeout=null){
-	zbx_flush_post_cookies();
-
-	$script = '';
-	if( is_numeric($timeout) ) {
-		$script.='setTimeout(\'window.location="'.$url.'"\','.($timeout*1000).')';
-	}
-	else {
-		$script.='window.location = "'.$url.'";';
-	}
-	insert_js($script);
-}
-
-function simple_js_redirect($url,$timeout=null){
-	$script = '';
-	if( is_numeric($timeout) ) {
-		$script.='setTimeout(\'window.location="'.$url.'"\','.($timeout*1000).')';
-	}
-	else {
-		$script.='window.location = "'.$url.'";';
-	}
-	insert_js($script);
-}
-
 function play_sound($filename){
-	insert_js('	if (IE){
+	insert_js('	if(IE){
 			document.writeln(\'<bgsound src="'.$filename.'" loop="0" />\');
 		}
 		else{
@@ -517,44 +472,50 @@ function insert_js_function($fnct_name){
 				return true;
 			}');
 		break;
-		case 'add_selected_values':
+		case 'addSelectedValues':
 			insert_js('
-				function add_selected_values(objname, formname, dstfld, dstact, value) {
-					value = typeof(value) != "undefined" ? value : null;
-					dstact = ((typeof(dstact) != "undefined") && dstact) ? dstact : null;
+				function addSelectedValues(form, object){
+					form = $(form);
+					if(is_null(form)) return close_window();
 
-					var parent_document = window.opener.document;
+					var parent = window.opener;
+					if(!parent) return close_window();
 
-					if(!parent_document) return close_window();
+					var items = { "object": object, "values": new Array() };
 
-					if(is_null(value)) {
-						$(objname).getInputs("checkbox").each(
-							function(e){
-								if(e.checked && e.name != "check"){
-									add_variable("input", dstfld, e.value, formname, parent_document);
-								}
-							});
-					}
-					else {
-						add_variable("input", dstfld, value, formname, parent_document);
+					var chkBoxes = form.getInputs("checkbox");
+					for(var i=0; i < chkBoxes.length; i++){
+						if(chkBoxes[i].checked && (chkBoxes[i].name.indexOf("all_") < 0)){
+							items["values"].push(chkBoxes[i].value);
+						}
 					}
 
-					if(dstact)
-						add_variable("input", dstact, 1, formname, parent_document);
-
-					parent_document.forms[formname].submit();
+					parent.addPopupValues(items);
 					close_window();
 				}');
 		break;
-		case 'add_value':
+		case 'addValue':
 			insert_js('
-				function add_value(dstfld1, dstfld2, value1, value2) {
-					var parent_document = window.opener.document;
+				function addValue(object, singleValue) {
+					var parent = window.opener;
+					if(!parent) return close_window();
 
+					var items = { "object": object, "values": new Array(singleValue) };
+
+					parent.addPopupValues(items);
+					close_window();
+				}');
+		break;
+		case 'addValues':
+			insert_js('
+				function addValues(frame, values) {
+					var parent_document = window.opener.document;
 					if(!parent_document) return close_window();
 
-					parent_document.getElementById(dstfld1).value = value1;
-					parent_document.getElementById(dstfld2).value = value2;
+					for(var key in values){
+						if(is_null(values[key])) continue;
+						parent_document.getElementById(key).value = values[key];
+					}
 
 					close_window();
 				}');
@@ -565,13 +526,30 @@ function insert_js_function($fnct_name){
 					$(objname).getInputs("checkbox").each(function(e){ e.checked = value });
 				}');
 		break;
+		case 'removeSelectedItems':
+			insert_js('function removeSelectedItems(formobject, name){
+					formobject = $(formobject);
+					if(is_null(formobject)) return false;
+
+					for(var i=0; i < formobject.options.length; i++){
+						if(!isset(i, formobject.options)) continue;
+
+						if(formobject.options[i].selected){
+							var obj = $(name+"["+formobject.options[i].value+"]");
+							if(!is_null(obj)) obj.remove();
+						}
+					}
+				}
+			');
+		break;
 		default:
+			insert_js('throw("JS function not found ['.$fnct_name.']");');
 			break;
 	}
 };
 
 function insert_js($script){
-print('<script type="text/javascript">// <![CDATA['."\n".$script."\n".'// ]]></script>');
+	print('<script type="text/javascript">// <![CDATA['."\n".$script."\n".'// ]]></script>');
 }
 
 ?>

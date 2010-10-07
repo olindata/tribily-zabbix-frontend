@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2009 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -17,7 +17,8 @@
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **/
-
+?>
+<?php
 require_once('include/config.inc.php');
 require_once('include/hosts.inc.php');
 require_once('include/triggers.inc.php');
@@ -33,7 +34,8 @@ define('SHOW_TRIGGERS',0);
 define('SHOW_DATA',1);
 
 include_once('include/page_header.php');
-
+?>
+<?php
 if(isset($_REQUEST['select']) && ($_REQUEST['select']!='')){
 	unset($_REQUEST['groupid']);
 	unset($_REQUEST['hostid']);
@@ -44,19 +46,19 @@ if(isset($_REQUEST['select']) && ($_REQUEST['select']!='')){
 		'view_style'=>	array(T_ZBX_INT, O_OPT,	P_SYS,	IN("0,1"),	NULL),
 		'type'=>		array(T_ZBX_INT, O_OPT,	P_SYS,	IN("0,1"),	NULL),
 		'fullscreen'=>	array(T_ZBX_INT, O_OPT,	P_SYS,	IN("0,1"),	NULL),
-
 //ajax
-		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			'isset({favid})'),
-		'favid'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		NULL),
+		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			NULL),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
 	);
 
 	check_fields($fields);
-
+?>
+<?php
 /* AJAX	*/
 	if(isset($_REQUEST['favobj'])){
 		if('hat' == $_REQUEST['favobj']){
-			CProfile::update('web.overview.hats.'.$_REQUEST['favid'].'.state',$_REQUEST['state'], PROFILE_TYPE_INT);
+			CProfile::update('web.overview.hats.'.$_REQUEST['favref'].'.state',$_REQUEST['state'], PROFILE_TYPE_INT);
 		}
 	}
 
@@ -72,41 +74,37 @@ if(isset($_REQUEST['select']) && ($_REQUEST['select']!='')){
 	$_REQUEST['type'] = get_request('type',CProfile::get('web.overview.type',SHOW_TRIGGERS));
 	CProfile::update('web.overview.type',$_REQUEST['type'],PROFILE_TYPE_INT);
 
-	$options = array('allow_all_hosts','monitored_hosts','with_monitored_items');
-	if($_REQUEST['type'] == SHOW_TRIGGERS) array_push($options,'with_monitored_triggers');
-	if(!$ZBX_WITH_ALL_NODES)	array_push($options,'only_current_node');
+	$options = array(
+		'groups' => array(
+			'monitored_hosts' => 1,
+			'with_monitored_items' => 1,
+			'with_monitored_triggers' => ($_REQUEST['type'] == SHOW_TRIGGERS) ? 1 : null,
+		),
+		'hosts' => array(
+			'monitored_hosts' => 1,
+			'with_monitored_items' => 1,
+			'with_monitored_triggers' => ($_REQUEST['type'] == SHOW_TRIGGERS) ? 1 : null,
+		),
+		'hostid' => get_request('hostid', null),
+		'groupid' => get_request('groupid', null),
+	);
+	$pageFilter = new CPageFilter($options);
+	$_REQUEST['groupid'] = $pageFilter->groupid;
 
-//SDI($_REQUEST['groupid']);
-	$params = array();
-	foreach($options as  $option) $params[$option] = 1;
-	$PAGE_GROUPS = get_viewed_groups(PERM_READ_ONLY, $params);
-	$PAGE_HOSTS = get_viewed_hosts(PERM_READ_ONLY, $PAGE_GROUPS['selected'], $params);
 
-	validate_group($PAGE_GROUPS, $PAGE_HOSTS);
+	$form = new CForm(null, 'get');
+	$form->addItem(array(S_GROUP.SPACE, $pageFilter->getGroupsCB(true)));
 
-	$form = new CForm();
-	$form->setMethod('get');
+	$cmbType = new CComboBox('type', $_REQUEST['type'], 'submit()');
+	$cmbType->addItem(SHOW_TRIGGERS, S_TRIGGERS);
+	$cmbType->addItem(SHOW_DATA, S_DATA);
+	$form->addItem(array(SPACE.S_TYPE.SPACE, $cmbType));
 
-	$available_groups = $PAGE_GROUPS['groupids'];
-
-	$cmbGroups = new CComboBox('groupid',$PAGE_GROUPS['selected'],'javascript: submit();');
-
-	foreach($PAGE_GROUPS['groups'] as $groupid => $name){
-		$cmbGroups->addItem($groupid, get_node_name_by_elid($groupid, null, ': ').$name);
-	}
-
-	$form->addItem(array(S_GROUP.SPACE,$cmbGroups,SPACE));
-
-	$cmbType = new CComboBox('type',$_REQUEST['type'],'submit()');
-	$cmbType->addItem(SHOW_TRIGGERS,S_TRIGGERS);
-	$cmbType->addItem(SHOW_DATA,	S_DATA);
-	$form->addItem(array(S_TYPE.SPACE,$cmbType));
-
-	$help = new CHelp('web.view.php','right');
+	$help = new CHelp('web.view.php', 'right');
 	$help_table = new CTableInfo();
 	$help_table->setAttribute('style', 'width: 200px');
 
-	if($_REQUEST['type']==SHOW_TRIGGERS){
+	if($_REQUEST['type'] == SHOW_TRIGGERS){
 		$help_table->addRow(array(new CCol(SPACE, 'normal'), S_DISABLED));
 	}
 
@@ -134,17 +132,11 @@ if(isset($_REQUEST['select']) && ($_REQUEST['select']!='')){
 
 	$over_wdgt = new CWidget();
 // Header
-	$url = 'overview.php?fullscreen='.($_REQUEST['fullscreen']?'0':'1');
-
-	$fs_icon = new CDiv(SPACE,'fullscreen');
-	$fs_icon->setAttribute('title',$_REQUEST['fullscreen']?S_NORMAL.' '.S_VIEW:S_FULLSCREEN);
-	$fs_icon->addAction('onclick',new CJSscript("javascript: document.location = '".$url."';"));
-
+	$fs_icon = get_icon('fullscreen', array('fullscreen' => $_REQUEST['fullscreen']));
 	$over_wdgt->addPageHeader(S_OVERVIEW_BIG, array($fs_icon, $help));
 
 // 2nd heder
-	$form_l = new CForm();
-	$form_l->setMethod('get');
+	$form_l = new CForm(null, 'get');
 	$form_l->addVar('groupid',$_REQUEST['groupid']);
 
 	$cmbStyle = new CComboBox('view_style',$_REQUEST['view_style'],'submit()');
@@ -159,22 +151,20 @@ if(isset($_REQUEST['select']) && ($_REQUEST['select']!='')){
 //	show_table_header(S_OVERVIEW_BIG,$form);
 //-------------
 
-?>
-<?php
 	if($_REQUEST['type']==SHOW_DATA){
 //COpt::profiling_start('get_items_data_overview');
-		$table = get_items_data_overview($PAGE_HOSTS['hostids'],$_REQUEST['view_style']);
+		$table = get_items_data_overview(array_keys($pageFilter->hosts),$_REQUEST['view_style']);
 //COpt::profiling_stop('get_items_data_overview');
 	}
 	else if($_REQUEST['type']==SHOW_TRIGGERS){
 //COpt::profiling_start('get_triggers_overview');
-		$table = get_triggers_overview($PAGE_HOSTS['hostids'],$_REQUEST['view_style']);
+		$table = get_triggers_overview(array_keys($pageFilter->hosts),$_REQUEST['view_style']);
 //COpt::profiling_stop('get_triggers_overview');
 	}
 
 	$over_wdgt->addItem($table);
-
 	$over_wdgt->show();
+
 ?>
 <?php
 

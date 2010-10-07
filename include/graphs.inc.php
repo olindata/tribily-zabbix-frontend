@@ -1,7 +1,7 @@
 <?php
 /*
 ** ZABBIX
-** Copyright (C) 2000-2005 SIA Zabbix
+** Copyright (C) 2000-2010 SIA Zabbix
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -115,9 +115,26 @@
 	return $calc_fnc;
 	}
 
-	function getGraphDims($graphid){
-// ZOOM featers
+	function getGraphDims($graphid=null){
 		$graphDims = array();
+
+		$graphDims['shiftYtop'] = 35;
+		if(is_null($graphid)){
+			$graphDims['graphHeight'] = 200;
+			$graphDims['graphtype'] = 0;
+
+			if(GRAPH_YAXIS_SIDE_DEFAULT == 0){
+				$graphDims['shiftXleft'] = 85;
+				$graphDims['shiftXright'] = 30;
+			}
+			else{
+				$graphDims['shiftXleft'] = 30;
+				$graphDims['shiftXright'] = 85;
+			}
+
+			return $graphDims;
+		}
+// ZOOM featers
 
 		$sql = 'SELECT MAX(g.graphtype) as graphtype, MIN(gi.yaxisside) as yaxissidel, MAX(gi.yaxisside) as yaxissider, MAX(g.height) as height'.
 				' FROM graphs g, graphs_items gi '.
@@ -150,15 +167,6 @@
 	return $graphDims;
 	}
 
-	function get_graph_by_gitemid($gitemid){
-		$db_graphs = DBselect('SELECT distinct g.* '.
-						' FROM graphs g, graphs_items gi '.
-						' WHERE g.graphid=gi.graphid '.
-							' AND gi.gitemid='.$gitemid);
-
-	return DBfetch($db_graphs);
-	}
-
 	function get_graphs_by_hostid($hostid){
 		$sql = 'SELECT distinct g.* '.
 				' FROM graphs g, graphs_items gi, items i '.
@@ -189,100 +197,6 @@
 					' FROM graphs_items '.
 					' WHERE graphid='.$graphid.
 					' ORDER BY itemid,drawtype,sortorder,color,yaxisside');
-	}
-
-/*
- * Function: graph_accessible
- *
- * Description:
- *     Checks if graph is accessible to USER
- *
- * Author:
- *     Aly
- *
- */
-	function graph_accessible($graphid){
-		global $USER_DETAILS;
-		$available_hosts = get_accessible_hosts_by_user($USER_DETAILS, PERM_READ_ONLY, PERM_RES_IDS_ARRAY,get_current_nodeid(true));
-
-		$sql = 	'SELECT g.graphid '.
-				' FROM graphs g, graphs_items gi, items i '.
-				' WHERE g.graphid='.$graphid.
-					' AND g.graphid=gi.graphid '.
-					' AND i.itemid=gi.itemid '.
-					' AND '.DBcondition('i.hostid',$available_hosts,true);
-
-		if(DBfetch(DBselect($sql,1))){
-			return false;
-		}
-	return true;
-	}
-
-/*
- * Function: get_accessible_graphs
- *
- * Description:
- *     returns string of accessible graphid's
- *
- * Author:
- *     Aly
- *
- */
-	function get_accessible_graphs($perm,$hostids,$perm_res=null,$nodeid=null,$cache=1){
-		global $USER_DETAILS;
-		static $available_graphs;
-
-		if(is_null($perm_res)) $perm_res = PERM_RES_IDS_ARRAY;
-		$nodeid_str =(is_array($nodeid))?implode('',$nodeid):strval($nodeid);
-		$hostid_str = implode('',$hostids);
-
-		$cache_hash = md5($perm.$perm_res.$nodeid_str.$hostid_str);
-		if($cache && isset($available_graphs[$cache_hash])){
-			return $available_graphs[$cache_hash];
-		}
-
-		$available_hosts = get_accessible_hosts_by_user($USER_DETAILS, $perm, PERM_RES_IDS_ARRAY, $nodeid);
-
-		$denied_graphs = array();
-		$result = array();
-
-		$sql_where = '';
-		if(!empty($hostids)){
-			$sql_where.= ' AND '.DBcondition('i.hostid',$hostids);
-		}
-		$sql = 	'SELECT DISTINCT g.graphid '.
-				' FROM graphs g, graphs_items gi, items i '.
-				' WHERE g.graphid=gi.graphid '.
-					' AND i.itemid=gi.itemid '.
-					$sql_where.
-					' AND '.DBcondition('i.hostid',$available_hosts, true);
-
-		$db_graphs = DBselect($sql);
-		while($graph = DBfetch($db_graphs)){
-			$denied_graphs[] = $graph['graphid'];
-		}
-
-		$sql = 	'SELECT DISTINCT g.graphid '.
-				' FROM graphs g, graphs_items gi, items i '.
-				' WHERE g.graphid=gi.graphid '.
-					' AND i.itemid=gi.itemid '.
-					$sql_where.
-					(!empty($denied_graphs)?' AND '.DBcondition('g.graphid',$denied_graphs,true):'');
-		$db_graphs = DBselect($sql);
-		while($graph = DBfetch($db_graphs)){
-			$result[$graph['graphid']] = $graph['graphid'];
-		}
-
-		if(PERM_RES_STRING_LINE == $perm_res){
-			if(count($result) == 0)
-				$result = '-1';
-			else
-				$result = implode(',',$result);
-		}
-
-		$available_graphs[$cache_hash] = $result;
-
-	return $result;
 	}
 
 /*
@@ -326,19 +240,25 @@
 		$min = null;
 		$result = time() - 86400*365;
 
-		$items_by_type = array(ITEM_VALUE_TYPE_FLOAT => array(), ITEM_VALUE_TYPE_STR =>  array(), ITEM_VALUE_TYPE_LOG => array(),
-						ITEM_VALUE_TYPE_UINT64 => array(), ITEM_VALUE_TYPE_TEXT => array());
+		$items_by_type = array(
+			ITEM_VALUE_TYPE_FLOAT => array(),
+			ITEM_VALUE_TYPE_STR =>  array(),
+			ITEM_VALUE_TYPE_LOG => array(),
+			ITEM_VALUE_TYPE_UINT64 => array(),
+			ITEM_VALUE_TYPE_TEXT => array()
+		);
 
 		$sql = 'SELECT i.itemid, i.value_type '.
-				' FROM items i WHERE '.DBcondition('i.itemid', $itemids);
+				' FROM items i '.
+				' WHERE '.DBcondition('i.itemid', $itemids);
 		$db_result = DBselect($sql);
 
 		while($item = DBfetch($db_result)) {
 			$items_by_type[$item['value_type']][$item['itemid']] = $item['itemid'];
 		}
 
-		// data for ITEM_VALUE_TYPE_FLOAT and ITEM_VALUE_TYPE_UINT64 can be stored in trends tables or history table
-		// get max trends and history values for such type items to find out in what tables to look for data
+// data for ITEM_VALUE_TYPE_FLOAT and ITEM_VALUE_TYPE_UINT64 can be stored in trends tables or history table
+// get max trends and history values for such type items to find out in what tables to look for data
 		$sql_from = 'history';
 		$sql_from_num = '';
 		if(!empty($items_by_type[ITEM_VALUE_TYPE_FLOAT]) || !empty($items_by_type[ITEM_VALUE_TYPE_UINT64])) {
@@ -373,40 +293,18 @@
 					$sql_from = 'history';
 			}
 
-			foreach($items as $itemid) {
-				$sql = 'SELECT ht.clock '.
-						' FROM '.$sql_from.' ht '.
-						' WHERE ht.itemid='.$itemid.
-						' ORDER BY ht.itemid, ht.clock ';
-				if($min_tmp = DBfetch(DBselect($sql,1))){
-					$min = (is_null($min)) ? $min_tmp['clock'] : min($min, $min_tmp['clock']);
-				}
+			$sql = 'SELECT ht.itemid, MIN(ht.clock) as min_clock '.
+					' FROM '.$sql_from.' ht '.
+					' WHERE '.DBcondition('ht.itemid', $itemids).
+					' GROUP BY ht.itemid';
+			$res = DBselect($sql);
+			while($min_tmp = DBfetch($res)){
+				$min = (is_null($min)) ? $min_tmp['min_clock'] : min($min, $min_tmp['min_clock']);
 			}
 		}
 		$result = is_null($min)?$result:$min;
 
 	return $result;
-	}
-
-	function get_graphitem_by_gitemid($gitemid){
-		$result=DBselect('SELECT * FROM graphs_items WHERE gitemid='.$gitemid);
-		$row=DBfetch($result);
-		if($row){
-			return	$row;
-		}
-		error(S_NO_GRAPH_WITH." gitemid=[$gitemid]");
-
-	return	$result;
-	}
-
-	function get_graphitem_by_itemid($itemid){
-		$result = DBfetch(DBselect('SELECT * FROM graphs_items WHERE itemid='.$itemid));
-		$row=DBfetch($result);
-		if($row)
-		{
-			return	$row;
-		}
-		return	$result;
 	}
 
 	function get_graph_by_graphid($graphid){
@@ -540,7 +438,7 @@
 			error(S_GRAPH.SPACE.'"'.$name.'"'.SPACE.S_GRAPH_TEMPLATE_HOST_CANNOT_OTHER_ITEMS_HOSTS_SMALL);
 			return $result;
 		}
-		
+
 		// $filter = array(
 			// 'name' => $name,
 			// 'hostids' => $graph_hostids
@@ -759,7 +657,8 @@
 			$host_list[$graphid] = array();
 			$db_hosts = get_hosts_by_graphid($graphid);
 			while($db_host = DBfetch($db_hosts)){
-				$host_list[$graphid] = '"'.$db_host['host'].'"';
+				if(!isset($host_list[$graphid][$db_host['host']]))
+					$host_list[$graphid][$db_host['host']] = true;
 			}
 		}
 
@@ -783,7 +682,7 @@
 		if($result){
 			foreach($graphs as $graphid => $graph){
 				if(isset($host_list[$graphid]))
-					info('Graph "'.$graph['name'].'" deleted from hosts '.implode(',',$host_list));
+					info(S_GRAPH_DELETED_FROM_HOSTS_PART1.SPACE.$graph['name'].SPACE.S_GRAPH_DELETED_FROM_HOSTS_PART2.SPACE.(count($host_list[$graphid]) > 1 ? 's' : '').SPACE.S_GRAPH_DELETED_FROM_HOSTS_PART3.':'.SPACE.'"'.implode('","', array_keys($host_list[$graphid])).'"');
 			}
 		}
 
@@ -803,15 +702,15 @@
  *
  */
 	function cmp_graphitems(&$gitem1, &$gitem2){
-		if($gitem1["drawtype"]	!= $gitem2["drawtype"])		return 1;
-		if($gitem1["sortorder"]	!= $gitem2["sortorder"])	return 2;
-		if($gitem1["color"]	!= $gitem2["color"])		return 3;
-		if($gitem1["yaxisside"]	!= $gitem2["yaxisside"])	return 4;
+		if($gitem1['drawtype']	!= $gitem2['drawtype'])		return 1;
+		if($gitem1['sortorder']	!= $gitem2['sortorder'])	return 2;
+		if($gitem1['color']	!= $gitem2['color'])		return 3;
+		if($gitem1['yaxisside']	!= $gitem2['yaxisside'])	return 4;
 
-		$item1 = get_item_by_itemid($gitem1["itemid"]);
-		$item2 = get_item_by_itemid($gitem2["itemid"]);
+		$item1 = get_item_by_itemid($gitem1['itemid']);
+		$item2 = get_item_by_itemid($gitem2['itemid']);
 
-		if($item1["key_"] != $item2["key_"])			return 5;
+		if($item1['key_'] != $item2['key_'])			return 5;
 
 		return 0;
 	}
@@ -914,8 +813,8 @@
 					'graphids' => $db_graph['graphid'],
 					'output' => API_OUTPUT_EXTEND
 				));
-				
-				
+
+
 				$filter = array(
 					'name' => $db_graph['name'],
 					'hostids' => $hostid
@@ -932,7 +831,7 @@
 				if($res === false) return false;
 			}
 		}
-		
+
 		return true;
 	}
 
@@ -949,7 +848,7 @@
  *
  */
 	function copy_graph_to_host($graphid, $hostid, $copy_mode = false){
-		$result = false;
+		$result = true;
 
 		$gitems = array();
 
@@ -968,7 +867,6 @@
 		}
 
 		$db_graph = get_graph_by_graphid($graphid);
-
 		if($new_gitems = get_same_graphitems_for_host($gitems, $hostid)){
 			unset($chd_graphid);
 
@@ -1037,7 +935,7 @@
 			if($update){
 				if(isset($_REQUEST['period']) && ($_REQUEST['period'] >= ZBX_MIN_PERIOD))
 					CProfile::update($idx.'.period',$_REQUEST['period'],PROFILE_TYPE_INT, $idx2);
-					
+
 				if(isset($_REQUEST['stime']))
 					CProfile::update($idx.'.stime',$_REQUEST['stime'], PROFILE_TYPE_STR, $idx2);
 			}
@@ -1060,95 +958,17 @@
 		}
 
 		if(isset($_REQUEST['stime'])){
-			$bstime = $_REQUEST['stime'];
-			$time = mktime(substr($bstime,8,2),substr($bstime,10,2),0,substr($bstime,4,2),substr($bstime,6,2),substr($bstime,0,4));
+			$time = zbxDateToTime($_REQUEST['stime']);
+
 			if(($time+$_REQUEST['period']) > time()) {
-				$_REQUEST['stime'] = date('YmdHi', time()-$_REQUEST['period']);
+				$_REQUEST['stime'] = date('YmdHis', time()-$_REQUEST['period']);
 			}
 		}
 		else{
-			$_REQUEST['stime'] = date('YmdHi', time()-$_REQUEST['period']);
+			$_REQUEST['stime'] = date('YmdHis', time()-$_REQUEST['period']);
 		}
 
 	return $_REQUEST['period'];
-	}
-
-/*
- * Function:
- *		make_array_from_gitems
- *
- * Description:
- *     Creates array with items params for prepare_url function
- *
- * Author:
- *     Aly
- *
- * Comments
- *
- */
-	function make_url_from_gitems($gitems){
-
-		$gurl=array();
-		$ifields = array(
-						'itemid'	=> 1,
-						'drawtype'	=> 1,
-						'sortorder'	=> 1,
-						'color'		=> 1,
-						'yaxisside'	=> 1,
-						'calc_fnc'	=> 1,
-						'type'		=> 1,
-						'periods_cnt'	=> 1
-					);
-
-		foreach($gitems as $gitem){
-			foreach($gitem as $name => $value){
-				if(isset($ifields[$name])){
-					$gurl['items['.$gitem['itemid'].']['.$name.']']=$value;
-				}
-			}
-		}
-
-	return prepare_url($gurl);
-	}
-
-/*
- * Function:
- *		make_array_from_graphid
- *
- * Description:
- *     Creates array with graph params for prepare_url function
- *
- * Author:
- *     Aly
- *
- * Comments
- *	$full= false: for screens(WITHOUT width && height), true=all params
- */
-	function make_url_from_graphid($graphid,$full=false){
-
-		$gurl=array();
-		if($full){
-			$gparams = array();
-		}
-		else{
-			$gparams = array(
-						'height'=> 1,
-						'width'	=> 1
-					);
-		}
-
-		$graph=get_graph_by_graphid($graphid);
-		if($graph){
-			foreach($graph as $name => $value){
-				if(!is_numeric($name) && !isset($gparams[$name])) $gurl[$name]=$value;
-			}
-		}
-
-		$url = prepare_url($gurl);
-		if(!empty($url)){
-			$url=((($gurl['graphtype']==GRAPH_TYPE_PIE) || ($gurl['graphtype']==GRAPH_TYPE_EXPLODED))?'chart7.php?':'chart3.php?').trim($url,'&');
-		}
-	return $url;
 	}
 
 //Author:	Aly
@@ -1228,11 +1048,108 @@
 	return $result;
 	}
 
+	function imageDiagonalMarks($im,$x, $y, $offset, $color){
+		global $colors;
+
+		$gims = array(
+			'lt' => array(0,0, -9,0, -9,-3, -3,-9, 0,-9),
+			'rt' => array(0,0,  9,0,  9,-3,  3,-9, 0,-9),
+			'lb' => array(0,0, -9,0,  -9,3,  -3,9,  0,9),
+			'rb' => array(0,0,  9,0,   9,3,   3,9,  0,9),
+		);
+
+		foreach($gims['lt'] as $num => $px){
+			if(($num % 2) == 0) $gims['lt'][$num] = $px  + $x - $offset;
+			else $gims['lt'][$num] = $px  + $y - $offset;
+		}
+
+		foreach($gims['rt'] as $num => $px){
+			if(($num % 2) == 0) $gims['rt'][$num] = $px  + $x + $offset;
+			else $gims['rt'][$num] = $px  + $y - $offset;
+		}
+
+		foreach($gims['lb'] as $num => $px){
+			if(($num % 2) == 0) $gims['lb'][$num] = $px  + $x - $offset;
+			else $gims['lb'][$num] = $px  + $y + $offset;
+		}
+
+		foreach($gims['rb'] as $num => $px){
+			if(($num % 2) == 0) $gims['rb'][$num] = $px  + $x + $offset;
+			else $gims['rb'][$num] = $px  + $y + $offset;
+		}
+
+		imagefilledpolygon($im,$gims['lt'],5,$color);
+		imagepolygon($im,$gims['lt'],5,$colors['Dark Red']);
+
+		imagefilledpolygon($im,$gims['rt'],5,$color);
+		imagepolygon($im,$gims['rt'],5,$colors['Dark Red']);
+
+		imagefilledpolygon($im,$gims['lb'],5,$color);
+		imagepolygon($im,$gims['lb'],5,$colors['Dark Red']);
+
+		imagefilledpolygon($im,$gims['rb'],5,$color);
+		imagepolygon($im,$gims['rb'],5,$colors['Dark Red']);
+
+	}
+
+	function imageVerticalMarks($im,$x, $y, $offset, $color, $marks='tlbr'){
+		global $colors;
+
+		$polygons = 5;
+		$gims = array(
+			't' => array(0,0, -6,-6, -3,-9,  3,-9,  6,-6),
+			'l' => array(0,0,  -6,6,  -9,3, -9,-3, -6,-6),
+			'b' => array(0,0,   6,6,   3,9,  -3,9,  -6,6),
+			'r' => array(0,0,  6,-6,  9,-3,   9,3,   6,6),
+		);
+
+		foreach($gims['t'] as $num => $px){
+			if(($num % 2) == 0) $gims['t'][$num] = $px  + $x;
+			else $gims['t'][$num] = $px  + $y - $offset;
+		}
+
+		foreach($gims['l'] as $num => $px){
+			if(($num % 2) == 0) $gims['l'][$num] = $px  + $x - $offset;
+			else $gims['l'][$num] = $px  + $y;
+		}
+
+		foreach($gims['b'] as $num => $px){
+			if(($num % 2) == 0) $gims['b'][$num] = $px  + $x;
+			else $gims['b'][$num] = $px  + $y + $offset;
+		}
+
+		foreach($gims['r'] as $num => $px){
+			if(($num % 2) == 0) $gims['r'][$num] = $px  + $x + $offset;
+			else $gims['r'][$num] = $px  + $y;
+		}
+
+		if(strpos($marks, 't') !== false){
+			imagefilledpolygon($im,$gims['t'],$polygons,$color);
+			imagepolygon($im,$gims['t'],$polygons,$colors['Dark Red']);
+		}
+
+		if(strpos($marks, 'l') !== false){
+			imagefilledpolygon($im,$gims['l'],$polygons,$color);
+			imagepolygon($im,$gims['l'],$polygons,$colors['Dark Red']);
+		}
+
+		if(strpos($marks, 'b') !== false){
+			imagefilledpolygon($im,$gims['b'],$polygons,$color);
+			imagepolygon($im,$gims['b'],$polygons,$colors['Dark Red']);
+		}
+
+		if(strpos($marks, 'r') !== false){
+			imagefilledpolygon($im,$gims['r'],$polygons,$color);
+			imagepolygon($im,$gims['r'],$polygons,$colors['Dark Red']);
+		}
+
+	}
+
 	function imageText($image, $fontsize, $angle, $x, $y, $color, $string){
 		$gdinfo = gd_info();
 
 		if($gdinfo['FreeType Support'] && function_exists('imagettftext')){
-		
+
 			if((preg_match(ZBX_PREG_DEF_FONT_STRING, $string) && ($angle != 0)) || (ZBX_FONT_NAME == ZBX_GRAPH_FONT_NAME)){
 				$ttf = ZBX_FONTPATH.'/'.ZBX_FONT_NAME.'.ttf';
 				imagettftext($image, $fontsize, $angle, $x, $y, $color, $ttf, $string);
@@ -1243,7 +1160,7 @@
 			}
 			else{
 				$ttf = ZBX_FONTPATH.'/'.ZBX_GRAPH_FONT_NAME.'.ttf';
-				
+
 				$size = imageTextSize($fontsize, 0, $string);
 
 				$imgg = imagecreatetruecolor($size['width']+1, $size['height']);
@@ -1251,13 +1168,13 @@
 				imagefill($imgg, 0, 0, $transparentColor);
 
 				imagettftext($imgg, $fontsize, 0, 0, $size['height'], $color, $ttf, $string);
-				
+
 				$imgg = imagerotate($imgg, $angle, $transparentColor);
 				ImageAlphaBlending($imgg, false);
 				imageSaveAlpha($imgg, true);
-				
+
 				imagecopy($image, $imgg, $x - $size['height'], $y - $size['width'], 0, 0, $size['height'], $size['width']+1);
-				
+
 				imagedestroy($imgg);
 			}
 /*
@@ -1266,7 +1183,7 @@
 			if(!$angle)	imagerectangle($image, $x, $y+$ar[1], $x+abs($ar[0] - $ar[4]), $y+$ar[5], $color);
 			else imagerectangle($image, $x, $y, $x-abs($ar[0] - $ar[4]), $y+($ar[5]-$ar[1]), $color);
 //*/
-			
+
 		}
 		else{
 			$dims = imageTextSize($fontsize, $angle, $string);
@@ -1305,9 +1222,9 @@
 		$gdinfo = gd_info();
 
 		$result = array();
-		
+
 		if($gdinfo['FreeType Support'] && function_exists('imagettfbbox')){
-		
+
 			if(preg_match(ZBX_PREG_DEF_FONT_STRING, $string) && ($angle != 0)){
 				$ttf = ZBX_FONTPATH.'/'.ZBX_FONT_NAME.'.ttf';
 			}
@@ -1319,6 +1236,7 @@
 
 			$result['height'] = abs($ar[1] - $ar[5]);
 			$result['width'] = abs($ar[0] - $ar[4]);
+			$result['baseline'] = $ar[1];
 		}
 		else{
 			switch($fontsize){
@@ -1343,8 +1261,112 @@
 				$result['height'] = imagefontheight($fontsize);
 				$result['width'] = imagefontwidth($fontsize) * zbx_strlen($string);
 			}
+			$result['baseline'] = 0;
 		}
 
-	return $result;
+		return $result;
+	}
+
+	function DashedLine($image,$x1,$y1,$x2,$y2,$color){
+		// Style for dashed lines
+		//$style = array($color, $color, $color, $color, IMG_COLOR_TRANSPARENT, IMG_COLOR_TRANSPARENT, IMG_COLOR_TRANSPARENT, IMG_COLOR_TRANSPARENT);
+		if(!is_array($color)) $style = array($color, $color, IMG_COLOR_TRANSPARENT, IMG_COLOR_TRANSPARENT);
+		else $style = $color;
+
+		ImageSetStyle($image, $style);
+		ImageLine($image,$x1,$y1,$x2,$y2,IMG_COLOR_STYLED);
+	}
+
+	function DashedRectangle($image,$x1,$y1,$x2,$y2,$color){
+		DashedLine($image, $x1,$y1,$x1,$y2,$color);
+		DashedLine($image, $x1,$y2,$x2,$y2,$color);
+		DashedLine($image, $x2,$y2,$x2,$y1,$color);
+		DashedLine($image, $x2,$y1,$x1,$y1,$color);
+	}
+
+	function find_period_start($periods,$time){
+		$date = getdate($time);
+		$wday = $date['wday'] == 0 ? 7 : $date['wday'];
+		$curr = $date['hours']*100+$date['minutes'];
+
+		if(isset($periods[$wday])){
+			$next_h = -1;
+			$next_m = -1;
+			foreach($periods[$wday] as $period){
+				$per_start = $period['start_h']*100+$period['start_m'];
+				if($per_start > $curr){
+					if(($next_h == -1 && $next_m == -1) || ($per_start < ($next_h*100 + $next_m))){
+						$next_h = $period['start_h'];
+						$next_m = $period['start_m'];
+					}
+					continue;
+				}
+
+				$per_end = $period['end_h']*100+$period['end_m'];
+				if($per_end <= $curr) continue;
+				return $time;
+			}
+
+			if($next_h >= 0 && $next_m >= 0){
+				return mktime($next_h, $next_m, 0, $date['mon'], $date['mday'], $date['year']);
+			}
+		}
+
+		for($days=1; $days < 7 ; ++$days){
+			$new_wday = (($wday + $days - 1)%7 + 1);
+			if(isset($periods[$new_wday ])){
+				$next_h = -1;
+				$next_m = -1;
+				foreach($periods[$new_wday] as $period){
+					$per_start = $period['start_h']*100+$period['start_m'];
+					if(($next_h == -1 && $next_m == -1) || ($per_start < ($next_h*100 + $next_m))){
+						$next_h = $period['start_h'];
+						$next_m = $period['start_m'];
+					}
+				}
+
+				if($next_h >= 0 && $next_m >= 0){
+					return mktime($next_h, $next_m, 0, $date['mon'], $date['mday'] + $days, $date['year']);
+				}
+			}
+		}
+	return -1;
+	}
+
+	function find_period_end($periods,$time,$max_time){
+		$date = getdate($time);
+		$wday = $date['wday'] == 0 ? 7 : $date['wday'];
+		$curr = $date['hours']*100+$date['minutes'];
+
+		if(isset($periods[$wday])){
+			$next_h = -1;
+			$next_m = -1;
+			foreach($periods[$wday] as $period){
+				$per_start = $period['start_h']*100+$period['start_m'];
+				$per_end = $period['end_h']*100+$period['end_m'];
+				if($per_start > $curr) continue;
+				if($per_end < $curr) continue;
+
+				if(($next_h == -1 && $next_m == -1) || ($per_end > ($next_h*100 + $next_m))){
+					$next_h = $period['end_h'];
+					$next_m = $period['end_m'];
+				}
+			}
+
+			if($next_h >= 0 && $next_m >= 0){
+				$new_time = mktime($next_h, $next_m, 0, $date['mon'], $date['mday'], $date['year']);
+
+				if($new_time == $time) return $time;
+				if($new_time > $max_time) return $max_time;
+
+				$next_time = find_period_end($periods,$new_time,$max_time);
+				if($next_time < 0)
+					return $new_time;
+				else
+					return $next_time;
+			}
+		}
+
+	return -1;
 	}
 ?>

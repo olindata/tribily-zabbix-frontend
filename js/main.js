@@ -170,7 +170,7 @@ implement: function(obj){
 
 check: function(e){
 	var e = e || window.event;
-	var obj = eventTarget(e);
+	var obj = Event.element(e);
 
 	PageRefresh.restart();
 	
@@ -360,6 +360,212 @@ submitGo: function(e){
 }
 }
 
+/************************************************************************************/
+/*								Audio Control System 								*/
+/************************************************************************************/
+var AudioList = {
+list:		{},		// audio files options
+dom:		{},		// dom objects links
+standart:	{
+	'embed':{
+		'enablejavascript':	'true',
+		'autostart':		'false',
+		'loop':				0
+	},
+	'audio':{
+		'autobuffer':	'autobuffer',
+		'autoplay':		null,
+		'controls':		null
+	}
+},
+
+play: function(audiofile){
+	if(!this.create(audiofile)) return false;
+
+	if(IE){
+		try{ 
+			this.dom[audiofile].Play();
+		}
+		catch(e){
+			setTimeout(this.play.bind(this, audiofile), 500);
+		}
+	}
+	else this.dom[audiofile].play();
+},
+
+pause: function(audiofile){
+	if(!this.create(audiofile)) return false;
+
+	if(IE){
+		try{
+			this.dom[audiofile].Stop();
+		}
+		catch(e){ 
+			setTimeout(this.pause.bind(this, audiofile), 1000);
+		}
+	}
+	else this.dom[audiofile].pause();
+},
+
+stop: function(audiofile){
+	if(!this.create(audiofile)) return false;
+
+	if(IE) this.dom[audiofile].setAttribute('loop', '0');
+	else this.dom[audiofile].removeAttribute('loop');
+
+	if(!IE){
+		try{
+			if(!this.dom[audiofile].paused){
+				this.dom[audiofile].currentTime = 0;
+			}
+			else if(this.dom[audiofile].currentTime > 0){
+				this.dom[audiofile].play();
+				this.dom[audiofile].currentTime = 0;
+				this.dom[audiofile].pause();
+			}
+		}
+		catch(e){
+//			this.remove(audiofile);
+		}
+	}
+
+	if(!is_null(this.list[audiofile].timeout)){
+		clearTimeout(this.list[audiofile].timeout);
+		this.list[audiofile].timeout = null;
+	}
+	
+	this.pause(audiofile);
+	this.endLoop(audiofile);
+},
+
+stopAll: function(e){
+
+	for(var name in this.list){
+		if(empty(this.dom[name])) continue;
+
+		this.stop(name);
+	}
+},
+
+
+volume: function(audiofile, vol){
+	if(!this.create(audiofile)) return false;
+},
+
+loop: function(audiofile, params){
+	if(!this.create(audiofile)) return false;
+
+	if(isset('repeat', params)){
+		if(IE) this.play(audiofile);
+		else{
+			if(this.list[audiofile].loop == 0){
+				if(params.repeat != 0) this.startLoop(audiofile, params.repeat);
+				else this.endLoop(audiofile);
+			}
+
+			if(this.list[audiofile].loop != 0){
+				this.list[audiofile].loop--;
+				this.play(audiofile);
+			}
+		}
+	}
+	else if(isset('seconds', params)){
+		if(IE){
+			this.dom[audiofile].setAttribute('loop', '1');
+		}
+		else{
+			this.startLoop(audiofile, 9999999);
+			this.list[audiofile].loop--;
+		}
+
+		this.play(audiofile);
+		this.list[audiofile].timeout = setTimeout(AudioList.stop.bind(AudioList,audiofile), 1000 * parseInt(params.seconds, 10));
+	}
+},
+
+startLoop: function(audiofile, loop){
+	if(!isset(audiofile, this.list)) return false;
+
+	if(isset('onEnded', this.list[audiofile])) this.endLoop(audiofile);
+
+	this.list[audiofile].loop = parseInt(loop, 10);
+	this.list[audiofile].onEnded = this.loop.bind(this, audiofile, {'repeat': 0});
+	addListener(this.dom[audiofile], 'ended', this.list[audiofile].onEnded);
+},
+
+endLoop: function(audiofile){
+	if(!isset(audiofile, this.list)) return true;
+
+	this.list[audiofile].loop = 0;
+
+	if(isset('onEnded', this.list[audiofile])){
+		removeListener(this.dom[audiofile], 'ended', this.list[audiofile].onEnded);
+		this.list[audiofile].onEnded = null;
+		delete(this.list[audiofile].onEnded);
+	}
+},
+
+create: function(audiofile, params){
+	if(typeof(audiofile) == 'undefined') return false;
+	if(isset(audiofile, this.list)) return true;
+
+	if(typeof(params) == 'undefined') params = {};
+
+	if(!isset('audioList', this.dom)){
+		this.dom.audioList = document.createElement('div');
+		document.getElementsByTagName('body')[0].appendChild(this.dom.audioList);
+
+		this.dom.audioList.setAttribute('id','audiolist');
+	}
+
+	if(IE){
+		this.dom[audiofile] = document.createElement('embed');
+		this.dom.audioList.appendChild(this.dom[audiofile]);
+
+		this.dom[audiofile].setAttribute('name', audiofile);
+		this.dom[audiofile].setAttribute('src', 'audio/'+audiofile);
+		this.dom[audiofile].style.display = 'none';
+
+		for(var key in this.standart.embed){
+			if(isset(key, params))
+				this.dom[audiofile].setAttribute(key, params[key]);
+			else if(!is_null(this.standart.embed[key]))
+				this.dom[audiofile].setAttribute(key, this.standart.embed[key]);
+		}
+	}
+	else{
+		this.dom[audiofile] = document.createElement('audio');
+		this.dom.audioList.appendChild(this.dom[audiofile]);
+
+		this.dom[audiofile].setAttribute('id', audiofile);
+		this.dom[audiofile].setAttribute('src', 'audio/'+audiofile);
+
+		for(var key in this.standart.audio){
+			if(isset(key, params))
+				this.dom[audiofile].setAttribute(key, params[key]);
+			else if(!is_null(this.standart.audio[key]))
+				this.dom[audiofile].setAttribute(key, this.standart.audio[key]);
+		}
+
+		this.dom[audiofile].load();
+	}
+
+	this.list[audiofile] = params;
+	this.list[audiofile].loop = 0;
+	this.list[audiofile].timeout = null;
+
+return true;
+},
+
+remove: function(audiofile){
+	if(!isset(audiofile, this.dom)) return true;
+
+	$(this.dom[audiofile]).remove();
+
+	delete(this.dom[audiofile]);
+	delete(this.list[audiofile]);
+}
+}
 
 /************************************************************************************/
 /*						Replace Standart Blink functionality						*/
@@ -582,7 +788,7 @@ show: function(e, obj, hintbox){
 	hintbox.style.zIndex = '999';
 	
 // IE6 z-index bug
-	//showPopupDiv(hintid, 'frame_'+hintid);
+	//if(IE6) showPopupDiv(hintid, 'frame_'+hintid);
 	
 },
 
@@ -676,7 +882,10 @@ function create_color_picker(){
 }
 
 function set_color(color){
-	if(curr_lbl)	curr_lbl.style.background = curr_lbl.style.color = "#" + color;
+	if(curr_lbl){
+		curr_lbl.style.background = curr_lbl.style.color = "#" + color;
+		curr_lbl.title = "#" + color;
+	}
 	if(curr_txt)	curr_txt.value = color;
 
 	hide_color_picker();
@@ -699,22 +908,36 @@ function add2favorites(favobj,favid){
 		return false;
 	}
 
-	if(typeof(favobj) == 'undefined'){
-		var fav_form = document.getElementById('fav_form');
-		if(!fav_form) throw "Object not found.";
-		
-		var favobj = fav_form.favobj.value;
-		var favid = fav_form.favid.value;
-	}
-	
 	if((typeof(favid) == 'undefined') || empty(favid)) return;
-	
+
 	var params = {
 		'favobj': 	favobj,
 		'favid': 	favid,
 		'action':	'add'
 	}
-	
+
+	send_params(params);
+//	json.onetime('dashboard.php?output=json&'+Object.toQueryString(params));
+}
+
+
+function rm4favorites(favobj,favid,menu_rowid){
+//	alert(favobj+','+favid+','+menu_rowid);
+	if('undefined' == typeof(Ajax)){
+		throw("Prototype.js lib is required!");
+		return false;
+	}
+
+	if((typeof(favobj) == 'undefined') || (typeof(favid) == 'undefined'))
+		throw "No agruments sent to function [rm4favorites()].";
+
+	var params = {
+		'favobj': 	favobj,
+		'favid': 	favid,
+		'favcnt':	menu_rowid,
+		'action':	'remove'
+	}
+
 	send_params(params);
 //	json.onetime('dashboard.php?output=json&'+Object.toQueryString(params));
 }
@@ -735,12 +958,16 @@ function change_flicker_state(divid){
 	if(false === filter_state) return false;
 
 	var params = {
+		'action':	'flop',
 		'favobj': 	'filter',
-		'favid': 	divid,
+		'favref': 	divid,
 		'state':	filter_state
 	}
 	
-	send_params(params);	
+	send_params(params);
+
+// selection box position
+	if(typeof(moveSBoxes) != 'undefined') moveSBoxes();
 }
 
 function change_hat_state(icon, divid){
@@ -759,33 +986,13 @@ function change_hat_state(icon, divid){
 	if(false === hat_state) return false;
 	
 	var params = {
+		'action':	'flop',
 		'favobj': 	'hat',
-		'favid': 	divid,
+		'favref': 	divid,
 		'state':	hat_state
 	}
 	
 	send_params(params);
-}
-
-function rm4favorites(favobj,favid,menu_rowid){
-//	alert(favobj+','+favid+','+menu_rowid);
-	if('undefined' == typeof(Ajax)){
-		throw("Prototype.js lib is required!");
-		return false;
-	}
-
-	if((typeof(favobj) == 'undefined') || (typeof(favid) == 'undefined')) 
-		throw "No agruments sent to function [rm4favorites()].";
-
-	var params = {
-		'favobj': 	favobj,
-		'favid': 	favid,
-		'favcnt':	menu_rowid,
-		'action':	'remove'
-	}
-
-	send_params(params);
-//	json.onetime('dashboard.php?output=json&'+Object.toQueryString(params));
 }
 
 function send_params(params){
@@ -800,7 +1007,7 @@ function send_params(params){
 						'parameters':params,
 						'onSuccess': function(resp){ },
 //						'onSuccess': function(resp){ SDI(resp.responseText); },
-						'onFailure': function(){ document.location = url.getPath()+'?'+Object.toQueryString(params); }
+						'onFailure': function(){document.location = url.getPath()+'?'+Object.toQueryString(params);}
 					}
 	);
 }
@@ -813,9 +1020,9 @@ function setRefreshRate(pmasterid,dollid,interval,params){
 	}
 	
 	if((typeof(params) == 'undefined') || is_null(params))  var params = new Array();
-	params['favobj'] = 		'set_rf_rate';
 	params['pmasterid'] = 	pmasterid;
-	params['favid'] = 		dollid;
+	params['favobj'] = 		'set_rf_rate';
+	params['favref'] = 		dollid;
 	params['favcnt'] = 		interval;
 //SDJ($params);
 	send_params(params);
@@ -830,6 +1037,7 @@ function switch_mute(icon){
 
 	var params = {
 		'favobj': 	'sound',
+		'favref':	'sound',
 		'state':	sound_state
 	}
 	

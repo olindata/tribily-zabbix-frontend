@@ -41,8 +41,8 @@ include_once 'include/page_header.php';
 
 		'period_id'=>			array(T_ZBX_INT, O_OPT,  null,	null,			null),
 		'caption'=>				array(T_ZBX_STR, O_OPT,  null,	null,			null),
-		'report_timesince'=>	array(T_ZBX_INT, O_OPT,  null,	null,		'isset({save})'),
-		'report_timetill'=>		array(T_ZBX_INT, O_OPT,  null,	null,		'isset({save})'),
+		'report_timesince'=>	array(T_ZBX_STR, O_OPT,  null,	null,		'isset({save})'),
+		'report_timetill'=>		array(T_ZBX_STR, O_OPT,  null,	null,		'isset({save})'),
 
 		'color'=>				array(T_ZBX_CLR, O_OPT,  null,	null,		'isset({save})'),
 
@@ -58,26 +58,29 @@ include_once 'include/page_header.php';
 	insert_js_function('add_period');
 	insert_js_function('update_period');
 
+	$_REQUEST['report_timesince'] = zbxDateToTime(get_request('report_timesince',date('YmdHis', time()-86400)));
+	$_REQUEST['report_timetill'] = zbxDateToTime(get_request('report_timetill',date('YmdHis')));
+	
 	$_REQUEST['caption'] = get_request('caption','');
 	if(zbx_empty($_REQUEST['caption']) && isset($_REQUEST['report_timesince']) && isset($_REQUEST['report_timetill'])){
-		$_REQUEST['caption'] = date(S_DATE_FORMAT_YMDHMS,  $_REQUEST['report_timesince']).' - '.
-								date(S_DATE_FORMAT_YMDHMS, $_REQUEST['report_timetill']);
+		$_REQUEST['caption'] = zbx_date2str(S_POPUP_PERIOD_CAPTION_DATE_FORMAT,  $_REQUEST['report_timesince']).' - '.
+								zbx_date2str(S_POPUP_PERIOD_CAPTION_DATE_FORMAT, $_REQUEST['report_timetill']);
 	}
 
 	if(isset($_REQUEST['save'])){
 		if(isset($_REQUEST['period_id'])){
 			insert_js("update_period('".
-				$_REQUEST['period_id']."','".
-				$_REQUEST['dstfrm']."','".
-				$_REQUEST['caption']."','".
+				$_REQUEST['period_id']."',".
+				zbx_jsvalue($_REQUEST['dstfrm']).",".
+				zbx_jsvalue($_REQUEST['caption']).",'".
 				$_REQUEST['report_timesince']."','".
 				$_REQUEST['report_timetill']."','".
 				$_REQUEST['color']."');\n");
 		}
 		else{
-			insert_js("add_period('".
-				$_REQUEST['dstfrm']."','".
-				$_REQUEST['caption']."','".
+			insert_js("add_period(".
+				zbx_jsvalue($_REQUEST['dstfrm']).",".
+				zbx_jsvalue($_REQUEST['caption']).",'".
 				$_REQUEST['report_timesince']."','".
 				$_REQUEST['report_timetill']."','".
 				$_REQUEST['color']."');\n");
@@ -100,14 +103,15 @@ include_once 'include/page_header.php';
 		$report_timetill = get_request('report_timetill',time());
 
 		$frmPd->addVar('config',$config);
-		$frmPd->addVar('report_timesince',$report_timesince);
-		$frmPd->addVar('report_timetill',$report_timetill);
+		$frmPd->addVar('report_timesince', date('YmdHis', $report_timesince));
+		$frmPd->addVar('report_timetill', date('YmdHis', $report_timetill));
+
 		if(isset($_REQUEST['period_id']))
 			$frmPd->addVar('period_id',$_REQUEST['period_id']);
 
 
 		$frmPd->addRow(array( new CVisibilityBox('caption_visible', !zbx_empty($caption), 'caption', S_DEFAULT),
-			S_CAPTION), new CTextBox('caption',$caption,10));
+			S_CAPTION), new CTextBox('caption',$caption,42));
 
 //		$frmPd->addRow(S_CAPTION, new CTextBox('caption',$caption,10));
 

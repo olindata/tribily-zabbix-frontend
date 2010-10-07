@@ -17,9 +17,7 @@
 ** Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **/
 
-var CSwitcher = Class.create();
-
-CSwitcher.prototype = {
+var CSwitcher = Class.create({
 initProc: null,		// on if init method is running
 switcherName : '',
 switchers : {},
@@ -84,7 +82,7 @@ open : function(switcherid){
 showHide : function(e){
 	PageRefresh.restart();
 
-	var obj = eventTarget(e);
+	var obj = Event.element(e);
 	var switcherid = obj.getAttribute('data-switcherid');
 
 	if(obj.className == this.classClosed){
@@ -147,4 +145,4 @@ storeCookie : function(){
 
 	cookie.createArray(this.switcherName, storeArray);
 }
-}
+});

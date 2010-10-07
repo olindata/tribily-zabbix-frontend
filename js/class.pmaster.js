@@ -1,5 +1,5 @@
 /*
-** Copyright (C) 2009 Artem "Aly" Suharev
+** Copyright (C) 2010 Artem "Aly" Suharev
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -27,19 +27,14 @@ return pmid;
 
 // Puppet master Class
 // Author: Aly
-var CPMaster = Class.create();
-CPMaster.prototype = {
+var CPMaster = Class.create(CDebug,{
 pmasterid:			0,				// PMasters reference id
 dolls:				new Array(),	// list of updated objects
 
-debug_status: 		0,				// debug status: 0 - off, 1 - on, 2 - SDI;
-debug_info: 		'',				// debug string
-debug_prev:			'',				// don't log repeated fnc
-
-initialize: function(pmid, obj4upd){
-	this.debug('initialize');
-	
+initialize: function($super, pmid, obj4upd){
 	this.pmasterid = pmid;
+	$super('CPMaster['+pmid+']');
+//--
 	
 	var doll = new Array();
 	for(id in obj4upd){
@@ -131,31 +126,13 @@ clear: function(){
 		this.rmvDoll(domid);
 	}
 	this.dolls = new Array();
-},
-
-debug: function(fnc_name, id){
-	if(this.debug_status){
-		var str = 'PMaster.'+fnc_name;
-		if(typeof(id) != 'undefined') str+= ' :'+id;
-
-		if(this.debug_prev == str) return true;
-
-		this.debug_info += str + '\n';
-		if(this.debug_status == 2){
-			SDI(str);
-		}
-		
-		this.debug_prev = str;
-	}
 }
-}
+});
 
 // JavaScript Document
 // DOM obj light loader (DOLL)
 // Author: Aly
-var CDoll = Class.create();
-
-CDoll.prototype = {
+var CDoll = Class.create(CDebug,{
 _pmasterid:		0,			// PMasters id to which doll belongs
 _domobj:		null,		// DOM obj for update
 _domid:			null,		// DOM obj id
@@ -167,18 +144,15 @@ _lastupdate:	0,
 _counter:		0,			// how many times do update, 0 - infinite
 _params:		'',
 _status:		false,
+_ready:			false,
 
 pexec:			null,		// PeriodicalExecuter object
 min_freq:		5,			// seconds
 
-debug_status: 	0,			// debug status: 0 - off, 1 - on, 2 - SDI;
-debug_info: 	'',			// debug string
-debug_prev:		'',			// don't log repeated fnc
-
-
-initialize: function(obj4update){
-	this._domid = obj4update.domid;	
-	this.debug('initialize');
+initialize: function($super, obj4update){
+	this._domid = obj4update.domid;
+	$super('CDoll['+this._domid+']');
+//--
 
 	this._domobj = $(this._domid);
 	this.url(obj4update.url);
@@ -312,7 +286,7 @@ update: function(){
 onSuccess: function(resp){
 	this.debug('onSuccess');
 	this.rmwDarken();
-	
+
 	var headers = resp.getAllResponseHeaders(); 
 //alert(headers);
 	if(headers.indexOf('Ajax-response: false') > -1){
@@ -367,24 +341,5 @@ rmwDarken: function(){
 		document.body.removeChild(this._domdark);
 		this._domdark = null;
 	}
-},
-
-notify: function(){
-},
-
-debug: function(fnc_name, id){
-	if(this.debug_status){
-		var str = 'Doll['+this._domid+'].'+fnc_name;
-		if(typeof(id) != 'undefined') str+= ' :'+id;
-
-		if(this.debug_prev == str) return true;
-
-		this.debug_info += str + '\n';
-		if(this.debug_status == 2){
-			SDI(str);
-		}
-		
-		this.debug_prev = str;
-	}
 }
-}
+});
