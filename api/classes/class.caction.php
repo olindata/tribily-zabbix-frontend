@@ -678,7 +678,7 @@ COpt::memoryPick();
 		}
 
 		foreach($conditions as $cnum => $condition){
-			if(!validate_condition($condition['type'], $condition['value'])){
+			if(!validate_condition($condition['conditiontype'], $condition['value'])){
 				self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect parameters used for Conditions');
 			}
 			$conditions_insert[] = $condition;
