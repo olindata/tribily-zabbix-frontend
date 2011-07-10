@@ -34,7 +34,7 @@ function check_permission_for_action_conditions($conditions){
 	foreach($conditions as $ac_data){
 		if($ac_data['operator'] != 0) continue;
 
-		switch($ac_data['type']){
+		switch($ac_data['conditiontype']){
 			case CONDITION_TYPE_HOST_GROUP:
 				$groupids[$ac_data['value']] = $ac_data['value'];
 				break;

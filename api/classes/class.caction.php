@@ -574,7 +574,7 @@ COpt::memoryPick();
  * @param array $actions[0,...]['url'] OPTIONAL
  * @return boolean
  */
-	public static function update($actions){
+	public static function  update($actions){
 		$actions = zbx_toArray($actions);
 		$actionids = zbx_objectValues($actions, 'actionid');
 		$update = array();
@@ -664,13 +664,14 @@ COpt::memoryPick();
  *
  * @param array $conditions multidimensional array with conditions data
  * @param array $conditions[0,...]['actionid']
- * @param array $conditions[0,...]['type']
+ * @param array $conditions[0,...]['conditiontype']
  * @param array $conditions[0,...]['value']
  * @param array $conditions[0,...]['operator']
  * @return boolean
  */
 	protected static function addConditions($conditions){
-		$conditions = zbx_toArray($conditions);
+      global $ZBX_MESSAGES;
+      $conditions = zbx_toArray($conditions);
 		$conditions_insert = array();
 
 		if(!check_permission_for_action_conditions($conditions)){
@@ -678,9 +679,9 @@ COpt::memoryPick();
 		}
 
 		foreach($conditions as $cnum => $condition){
-			if(!validate_condition($condition['type'], $condition['value'])){
-				self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect parameters used for Conditions');
-			}
+			if(!validate_condition($condition['conditiontype'], $condition['value'])){
+				self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect parameters used for Conditions: '.print_r($condition));
+  			}
 			$conditions_insert[] = $condition;
 		}
 
