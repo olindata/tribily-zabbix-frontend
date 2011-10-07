@@ -1108,7 +1108,10 @@ Copt::memoryPick();
 		$passwd = $user['password'];
 		$auth_type = $user['auth_type'];
 
-		$password = md5($passwd);
+		if(isset($user['overrideHashing']))
+			$password = $passwd;
+		else
+			$password = md5($passwd);
 
 		$sql = 'SELECT u.userid,u.attempt_failed, u.attempt_clock, u.attempt_ip '.
 				' FROM users u '.
