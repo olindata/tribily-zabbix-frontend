@@ -19,6 +19,13 @@
 **/
 ?>
 <?php
+// If the user got redirected from somewhere else, we may want to set the cookie
+if(isset($_GET['sid']) && isset($_GET['setCookie']))
+{
+	$_COOKIE['zbx_sessionid'] = $_GET['sid'];
+}
+
+
 require_once('include/config.inc.php');
 require_once('include/forms.inc.php');
 
