@@ -80,6 +80,14 @@ $page['file']	= 'index.php';
 	$request = get_request('request');
 	if(isset($_REQUEST['enter'])&&($_REQUEST['enter']=='Enter')){
 		global $USER_DETAILS;
+
+		// Login disabled?
+		if($LOGIN_REDIRECT_ENABLED == true)
+		{
+			header("Location: ".$LOGIN_REDIRECT_URL);
+			exit();
+		}
+
 		$name = get_request('name','');
 		$passwd = get_request('password','');
 
@@ -99,6 +107,16 @@ include_once('include/page_header.php');
 	if(isset($_REQUEST['message'])) show_error_message($_REQUEST['message']);
 
 	if(!isset($sessionid) || ($USER_DETAILS['alias'] == ZBX_GUEST_USER)){
+		// Login disabled?
+		if($LOGIN_REDIRECT_ENABLED == true)
+		{
+				jsRedirect($LOGIN_REDIRECT_URL);
+				error("Sorry, you can only signon using our Website at ".$LOGIN_REDIRECT_URL);
+				// We should add this, Sorry :(
+				include_once('include/page_footer.php');
+				exit();
+		}
+
 		switch($authentication_type){
 			case ZBX_AUTH_HTTP:
 				break;
