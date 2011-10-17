@@ -57,7 +57,7 @@ $page['file']	= 'index.php';
 
 		CUser::logout($sessionid);
 
-		jsRedirect('index.php');
+		jsRedirect($LOGOUT_REDIRECT_URL);
 		exit();
 	}
 
