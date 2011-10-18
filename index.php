@@ -57,11 +57,12 @@ $page['file']	= 'index.php';
 
 		CUser::logout($sessionid);
 
-		jsRedirect('index.php');
+		jsRedirect($LOGOUT_REDIRECT_URL);
 		exit();
 	}
 
 	$config = select_config();
+
 
 	$authentication_type = $config['authentication_type'];
 
@@ -77,12 +78,20 @@ $page['file']	= 'index.php';
 		}
 	}
 
+	// Look if the Variable is set correctly
+	if($LOGIN_REDIRECT_ENABLED && trim($LOGIN_REDIRECT_URL)=="")
+	{
+		$LOGIN_REDIRECT_ENABLED = false;
+		error("WARNING! The LOGIN_REDIRECT_URL parameter was empty. REDIRECT Feature was disabled to prevent infinite loops. Please contact the System Administrator");
+	}
+
+
 	$request = get_request('request');
 	if(isset($_REQUEST['enter'])&&($_REQUEST['enter']=='Enter')){
 		global $USER_DETAILS;
 
 		// Login disabled?
-		if($LOGIN_REDIRECT_ENABLED == true)
+		if($LOGIN_REDIRECT_ENABLED)
 		{
 			header("Location: ".$LOGIN_REDIRECT_URL);
 			exit();

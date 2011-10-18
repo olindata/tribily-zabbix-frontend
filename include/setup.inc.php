@@ -764,6 +764,7 @@ $IMAGE_FORMAT_DEFAULT	= IMAGE_FORMAT_PNG;
 
 $LOGIN_REDIRECT_ENABLED = false;
 $LOGIN_REDIRECT_URL     = \'\';
+$LOGOUT_REDIRECT_URL    = \'index.php\';
 ?>
 ';
 		}
