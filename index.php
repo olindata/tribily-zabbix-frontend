@@ -20,9 +20,9 @@
 ?>
 <?php
 // If the user got redirected from somewhere else, we may want to set the cookie
-if(isset($_GET['sid']) && isset($_GET['setCookie']))
+if(isset($_GET['setSid']) && isset($_GET['setCookie']))
 {
-	$_COOKIE['zbx_sessionid'] = $_GET['sid'];
+	$_COOKIE['zbx_sessionid'] = $_GET['setSid'];
 }
 
 
