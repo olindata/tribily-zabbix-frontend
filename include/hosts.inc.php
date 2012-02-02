@@ -19,57 +19,6 @@
 **/
 ?>
 <?php
-// HOST GROUP functions
-	function update_host_groups_by_groupid($groupid,$hosts=array()){
-		$options = array(
-				'groupids'=>$groupid,
-				'editable'=>1,
-				'preservekeys' => 1
-			);
-		$grp_hosts = CHost::get($options);
-		$grp_hostids = zbx_objectValues($grp_hosts, 'hostid');
-
-// unlinked hosts
-		$missed_hostids = array_diff($grp_hostids, $hosts);
-// hosts that allowed to be unlinked
-		$unlinkable_hostids = getUnlinkableHosts($groupid);
-
-// hosts that have been unlinked improperly
-		$err_hostids = array_diff($missed_hostids, $unlinkable_hostids);
-
-		foreach($err_hostids as $num => $hostid){
-			$host = get_host_by_hostid($hostid);
-			error(S_HOST.SPACE.'"'.$host['host'].'"'.SPACE.S_CANNOT_EXIST_WITHOUT_GROUP);
-
-			return false;
-		}
-		$result = DBexecute('DELETE FROM hosts_groups WHERE groupid='.$groupid);
-		$hosts = zbx_toObject($hosts, 'hostid');
-
-		$options = array(
-				'hosts' => $hosts,
-				'groups' => array('groupid' => $groupid)
-			);
-		$result = CHostGroup::createHosts();
-
-	return $result;
-	}
-
-/*
-	function update_host_groups($hostid,$groups=array()){
-		if(empty($groups)){
-			$host = get_host_by_hostid($hostid);
-			error('Host "'.$host['host'].'" can not exist without group');
-			return false;
-		}
-		DBexecute('DELETE FROM hosts_groups WHERE hostid='.$hostid);
-		foreach($groups as $groupid){
-			$result = CHostGroup::createHosts(array('hosts' => array($hostid), 'groups' => $groupid));
-		}
-	return $result;
-	}
- */
-
 	function setHostGroupInternal($groupids, $internal=ZBX_NOT_INTERNAL_GROUP){
 		zbx_value2array($groupids);
 
@@ -246,6 +195,9 @@
 // delete host from template linkages
 		DBexecute('DELETE FROM hosts_templates WHERE '.DBcondition('hostid',$hostids));
 
+		// delete host macros
+		DBexecute('DELETE FROM hostmacro WHERE '.DBcondition('hostid', $hostids));
+
 // disable actions
 		$actionids = array();
 
@@ -294,26 +246,33 @@
 // delete host profile
 		delete_host_profile($hostids);
 		delete_host_profile_ext($hostids);
+		$applicationids = array();
+		$query = 'SELECT a.applicationid'.
+				' FROM applications a'.
+				' WHERE	'.DBcondition('a.hostid', $hostids);
+		$db_applications = DBselect($query);
+		while($app = DBfetch($db_applications)){
+			$applicationids[] = $app['applicationid'];
+		}
+		$result = delete_application($applicationids);
+		if(!$result) return false;
 
-// delete host applications
-		DBexecute('DELETE FROM applications WHERE '.DBcondition('hostid',$hostids));
 
 // delete host
-		foreach ($hostids as $id) {	/* The section should be improved */
+		foreach($hostids as $id){	/* The section should be improved */
 			$host_old = get_host_by_hostid($id);
 			$result = DBexecute('DELETE FROM hosts WHERE hostid='.$id);
-			if ($result) {
-				info(S_HOST_HAS_BEEN_DELETED_MSG_PART1.SPACE.$host_old['host'].SPACE.S_HOST_HAS_BEEN_DELETED_MSG_PART2);
-				/*SDI(
-					'AUDIT_ACTION_DELETE '.AUDIT_ACTION_DELETE.' / '.
-					'AUDIT_RESOURCE_HOST '.AUDIT_RESOURCE_HOST.' / '.
-					'$id '.$id.' / '.
-					'$host_old[\'host\'] '.$host_old['host'].' / '.
-					'hosts / '.
-					'NULL / NULL'
-					);*/
-				add_audit_ext(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_HOST, $id, $host_old['host'], 'hosts', NULL, NULL);
-			}else
+			if($result){
+				if($host_old['status'] == HOST_STATUS_TEMPLATE){
+					info(S_TEMPLATE.SPACE.$host_old['host'].SPACE.S_HOST_HAS_BEEN_DELETED_MSG_PART2);
+					add_audit_ext(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_TEMPLATE, $id, $host_old['host'], 'hosts', NULL, NULL);
+				}
+				else{
+					info(S_HOST_HAS_BEEN_DELETED_MSG_PART1.SPACE.$host_old['host'].SPACE.S_HOST_HAS_BEEN_DELETED_MSG_PART2);
+					add_audit_ext(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_HOST, $id, $host_old['host'], 'hosts', NULL, NULL);
+				}
+			}
+			else
 				break;
 		}
 
@@ -337,6 +296,21 @@
 			}
 			return false;
 		}
+
+// check if hostgroup used in scripts
+		$error = false;
+		$sql = 'SELECT s.name AS script_name, g.name AS group_name '.
+				' FROM scripts s, groups g'.
+				' WHERE '.
+					' g.groupid = s.groupid '.
+					' AND '.DBcondition('s.groupid', $groupids);
+		$res = DBselect($sql);
+		while($group = DBfetch($res)){
+			$error = true;
+			error(sprintf(S_HOSTGROUP_CANNOT_BE_DELETED_USED_IN_SCRIPT, $group['group_name'], $group['script_name']));
+		}
+		if($error) return false;
+
 // delete screens items
 		$resources = array(
 			SCREEN_RESOURCE_HOSTGROUP_TRIGGERS,
@@ -1273,26 +1247,9 @@ return $result;
 			return false;
 		}
 
-
 		$host = get_host_by_hostid($hostid);
 
-		$hostids = array();
-		$db_hosts = get_hosts_by_templateid($host['hostid']);
-		while($db_host = DBfetch($db_hosts)){
-			$hostids[] = $db_host['hostid'];
-		}
-		$sql = 'SELECT applicationid
-			FROM applications
-			WHERE name='.zbx_dbstr($name).'
-				AND '.DBcondition('hostid', $hostids);
-		$lower_app = DBfetch(DBselect($sql));
-		if($lower_app){
-			error(S_APPLICATION.SPACE."'$name'".SPACE.S_ALREADY_EXISTS_IN_LINKED_HOSTS_SMALL);
-			return false;
-		}
-
-
-		$sql = 'SELECT applicationid
+		$sql = 'SELECT applicationid, templateid
 			FROM applications
 			WHERE name='.zbx_dbstr($name).'
 				AND hostid='.$hostid;
@@ -1300,17 +1257,18 @@ return $result;
 			$sql .= ' AND applicationid<>'.$applicationid;
 		}
 		$db_app = DBfetch(DBselect($sql));
-
-		if($db_app && $templateid == 0){
+		if($db_app && (($templateid == 0) || ($templateid && $db_app['templateid'] && $templateid != $db_app['templateid']))){
 			error(S_APPLICATION.SPACE."'$name'".SPACE.S_ALREADY_EXISTS_SMALL);
 			return false;
 		}
 
-		if($db_app && !is_null($applicationid)){ // delete old application with same name
+		// delete old application with same name
+		if($db_app && !is_null($applicationid)){
 			delete_application($db_app['applicationid']);
 		}
 
-		if($db_app && is_null($applicationid)){ // if found application with same name update them, adding not needed
+		// if found application with same name update them, adding not needed
+		if($db_app && is_null($applicationid)){
 			$applicationid = $db_app['applicationid'];
 		}
 
@@ -1321,7 +1279,7 @@ return $result;
 			$sql = 'INSERT INTO applications (applicationid, name, hostid, templateid) '.
 				" VALUES ($applicationid_new, ".zbx_dbstr($name).", $hostid, $templateid)";
 			if($result = DBexecute($sql)){
-				info(S_ADDED_NEW_APPLICATION.SPACE.$host['host'].':'.$name);
+				info(S_ADDED_NEW_APPLICATION.SPACE.'"'.$host['host'].':'.$name.'"');
 			}
 		}
 		else{
@@ -1329,7 +1287,7 @@ return $result;
 			$result = DBexecute('UPDATE applications SET name='.zbx_dbstr($name).', hostid='.$hostid.', templateid='.$templateid.
 				' WHERE applicationid='.$applicationid);
 			if($result)
-				info(S_UPDATED_APPLICATION.SPACE.$host['host'].':'.$old_app['name']);
+				info(S_APPLICATION.SPACE.'"'.$host['host'].':'.$old_app['name'].'"'.SPACE.S_UPDATED_SMALL);
 		}
 
 		if(!$result) return $result;
@@ -1389,23 +1347,11 @@ return $result;
 		return db_save_application($name,$hostid,$applicationid,$templateid);
 	}
 
-/*
- * Function: delete_application
- *
- * Description:
- *     Delete application with all linkages
- *
- * Author:
- *     Eugene Grigorjev (eugene.grigorjev@zabbix.com)
- *
- * Comments: !!! Don't forget sync code with C !!!
- *
- */
 	function delete_application($applicationids){
-		zbx_value2array($applicationids);
+		$applicationids = zbx_toHash($applicationids);
 
 		$apps = array();
-		$sql = 'SELECT a.applicationid, h.host, a.name '.
+		$sql = 'SELECT a.applicationid, h.host, a.name, a.templateid '.
 				' FROM applications a, hosts h '.
 				' WHERE '.DBcondition('a.applicationid',$applicationids).
 					' AND h.hostid=a.hostid';
@@ -1425,38 +1371,56 @@ return $result;
 			$tmp_appids[$db_app['applicationid']] = $db_app['applicationid'];
 		}
 
-		if(!empty($tmp_appids)) delete_application($tmp_appids);			// recursion!!!
+		if(!empty($tmp_appids)){
+// recursion!!!
+			if(!delete_application($tmp_appids)) return false;
+		}
 
+
+		$unlink_apps = array();
+		//check if app is used by web scenario
 		$sql = 'SELECT ht.name, ht.applicationid '.
 				' FROM httptest ht '.
-				' WHERE '.DBcondition('ht.applicationid',$applicationids);
+				' WHERE '.DBcondition('ht.applicationid', $applicationids);
 		$res = DBselect($sql);
-		if($info = DBfetch($res)){
-			info(S_APPLICATION.SPACE.'"'.$apps[$info['applicationid']]['host'].':'.$apps[$info['applicationid']]['name'].'"'.SPACE.S_USED_BY_SCENARIO_SMALL.SPACE.'"'.$info['name'].'"');
-			return false;
-		}
-
-		$sql = 'SELECT i.itemid,i.key_,i.description '.
-				' FROM items_applications ia, items i '.
-				' WHERE i.type='.ITEM_TYPE_HTTPTEST.
-					' AND i.itemid=ia.itemid '.
-					' AND '.DBcondition('ia.applicationid',$applicationids);
-		$res = DBselect($sql);
-		if($info = DBfetch($res)){
-			info(S_APPLICATION.SPACE.'"'.$host['host'].':'.$app['name'].'"'.SPACE.S_USED_BY_ITEM_SMALL.SPACE.'"'.item_description($info).'"');
-			return false;
-		}
-
-		$result = DBexecute('DELETE FROM items_applications WHERE '.DBcondition('applicationid',$applicationids));
-		$result = DBexecute('DELETE FROM applications WHERE '.DBcondition('applicationid',$applicationids));
-
-		if($result){
-			foreach($apps as $appid => $app){
-				info(S_APPLICATION.SPACE.'"'.$app['host'].':'.$app['name'].'"'.SPACE.S_DELETED_SMALL);
+		while ($info = DBfetch($res)) {
+			if ($apps[$info['applicationid']]['templateid'] > 0) {
+				$unlink_apps[$info['applicationid']] = $info['applicationid'];
+				unset($applicationids[$info['applicationid']]);
+			}
+			else {
+				error(S_APPLICATION.' ['.$apps[$info['applicationid']]['host'].':'.$apps[$info['applicationid']]['name'].'] '.S_USED_IN_WEB_SCENARIO);
+				return false;
 			}
 		}
 
-	return (bool) $result;
+		$sql = 'SELECT i.itemid, i.key_, i.description, ia.applicationid '.
+				' FROM items_applications ia, items i '.
+				' WHERE i.type='.ITEM_TYPE_HTTPTEST.
+					' AND i.itemid=ia.itemid '.
+					' AND '.DBcondition('ia.applicationid', $applicationids);
+		$res = DBselect($sql);
+		if ($info = DBfetch($res)) {
+			error(S_APPLICATION.SPACE.'"'.$apps[$info['applicationid']]['host'].':'.$apps[$info['applicationid']]['name'].'"'.SPACE.S_USED_BY_ITEM_SMALL.' ['.item_description($info).']');
+			return false;
+		}
+
+		$result = DBexecute('UPDATE applications SET templateid=0 WHERE '.DBcondition('applicationid', $unlink_apps));
+		$result &= DBexecute('DELETE FROM items_applications WHERE '.DBcondition('applicationid', $applicationids));
+		$result &= DBexecute('DELETE FROM applications WHERE '.DBcondition('applicationid', $applicationids));
+
+		if ($result) {
+			foreach ($apps as $appid => $app) {
+				if (isset($unlink_apps[$appid])) {
+					info(S_APPLICATION.SPACE.'"'.$app['host'].':'.$app['name'].'"'.SPACE.S_USED_IN_WEB_SCENARIO.' ('.S_UNLINKED_SMALL.')');
+				}
+				else {
+					info(S_APPLICATION.SPACE.'"'.$app['host'].':'.$app['name'].'"'.SPACE.S_DELETED_SMALL);
+				}
+			}
+		}
+
+		return $result;
 	}
 
 	function get_application_by_applicationid($applicationid,$no_error_message=0){
@@ -1518,29 +1482,29 @@ return $result;
 		zbx_value2array($templateids);
 
 		$db_apps = get_applications_by_hostid($hostid);
-		while($db_app = DBfetch($db_apps)){
-			if($db_app["templateid"] == 0)
+
+		$host = get_host_by_hostid($hostid);
+
+		while ($db_app = DBfetch($db_apps)) {
+			if ($db_app["templateid"] == 0) {
 				continue;
+			}
 
-			if(!is_null($templateids)){
-
-				unset($skip);
-				if($tmp_app_data = get_application_by_applicationid($db_app["templateid"])){
-					if(!uint_in_array($tmp_app_data["hostid"], $templateids)){
-						$skip = true;
-						break;
+			// check if application is from right template
+			if (!is_null($templateids)) {
+				if ($tmp_app_data = get_application_by_applicationid($db_app["templateid"])) {
+					if (!uint_in_array($tmp_app_data["hostid"], $templateids)) {
+						continue;
 					}
 				}
-				if(isset($skip)) continue;
-
 			}
 
-			if($unlink_mode){
-				if(DBexecute("update applications set templateid=0 where applicationid=".$db_app["applicationid"])){
-					info(S_APPLICATION.SPACE."'".$db_app["name"]."'".SPACE.S_UNLINKED_SMALL);
+			if ($unlink_mode) {
+				if (DBexecute("update applications set templateid=0 where applicationid=".$db_app["applicationid"])) {
+					info(S_APPLICATION.SPACE.'"'.$host["host"].':'.$db_app["name"].'"'.SPACE.S_UNLINKED_SMALL);
 				}
 			}
-			else{
+			else {
 				delete_application($db_app["applicationid"]);
 			}
 		}
@@ -1788,4 +1752,5 @@ return $result;
 
 	return $dlt_groupids;
 	}
+
 ?>

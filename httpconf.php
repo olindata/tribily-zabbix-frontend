@@ -50,9 +50,9 @@ include_once('include/page_header.php');
 		'agent'=>		array(T_ZBX_STR, O_OPT,  null,	null,'isset({save})'),
 		'macros'=>		array(T_ZBX_STR, O_OPT,  null,	null,'isset({save})'),
 		'steps'=>		array(T_ZBX_STR, O_OPT,  null,	null,'isset({save})'),
-		'authentication'=>	array(T_ZBX_INT, O_OPT,  null,  IN('0,1'),'isset({save})'),
-		'http_user'=>		array(T_ZBX_STR, O_OPT,  null,	NOT_EMPTY,'isset({save}) && isset({authentication}) && ({authentication}=='.HTTPTEST_AUTH_BASIC.')'),
-		'http_password'=>	array(T_ZBX_STR, O_OPT,  null,	NOT_EMPTY,'isset({save}) && isset({authentication}) && ({authentication}=='.HTTPTEST_AUTH_BASIC.')'),
+		'authentication'=>	array(T_ZBX_INT, O_OPT,  null,  IN('0,1,2'),'isset({save})'),
+		'http_user'=>		array(T_ZBX_STR, O_OPT,  null,	NOT_EMPTY,'isset({save}) && isset({authentication}) && ({authentication}=='.HTTPTEST_AUTH_BASIC.'||{authentication}=='.HTTPTEST_AUTH_NTLM.')'),
+		'http_password'=>	array(T_ZBX_STR, O_OPT,  null,	NOT_EMPTY,'isset({save}) && isset({authentication}) && ({authentication}=='.HTTPTEST_AUTH_BASIC.'||{authentication}=='.HTTPTEST_AUTH_NTLM.')'),
 
 		'new_httpstep'=>	array(T_ZBX_STR, O_OPT,  null,	null,null),
 
@@ -79,9 +79,9 @@ include_once('include/page_header.php');
 	$_REQUEST['showdisabled'] = get_request('showdisabled', CProfile::get('web.httpconf.showdisabled', 0));
 
 	check_fields($fields);
-	validate_sort_and_sortorder('wt.name',ZBX_SORT_UP);
+	validate_sort_and_sortorder('name', ZBX_SORT_UP);
 
-	$_REQUEST['go'] = get_request('go','none');
+	$_REQUEST['go'] = get_request('go', 'none');
 ?>
 <?php
 	$showdisabled = get_request('showdisabled', 0);
@@ -92,7 +92,6 @@ include_once('include/page_header.php');
 			'editable' => 1,
 		),
 		'hosts' => array(
-			'templated_hosts' => 1,
 			'editable' => 1,
 		),
 		'hostid' => get_request('hostid', null),
@@ -190,14 +189,6 @@ include_once('include/page_header.php');
 		$_REQUEST['form'] = 'clone';
 	}
 	else if(isset($_REQUEST['save'])){
-		/*
-		$delay_flex = get_request('delay_flex',array());
-		$db_delay_flex = '';
-		foreach($delay_flex as $val)
-			$db_delay_flex .= $val['delay'].'/'.$val['period'].';';
-		$db_delay_flex = trim($db_delay_flex,';');
-		// for future use */
-
 		if($_REQUEST['authentication'] != HTTPTEST_AUTH_NONE){
 			$http_user = htmlspecialchars($_REQUEST['http_user']);
 			$http_password = htmlspecialchars($_REQUEST['http_password']);
@@ -338,32 +329,237 @@ include_once('include/page_header.php');
 	}
 	$_REQUEST['steps'] = array_merge(get_request('steps',array())); /* reinitialize keys */
 
-	$form = new CForm();
-	$form->setMethod('get');
 
-	$form->addVar('hostid',$_REQUEST['hostid']);
-
-	if(!isset($_REQUEST['form']) && ($_REQUEST['hostid'] > 0))
-		$form->addItem(new CButton('form',S_CREATE_SCENARIO));
-
-	$http_wdgt = new CWidget();
-	$http_wdgt->addPageHeader(S_CONFIGURATION_OF_WEB_MONITORING_BIG, $form);
-
-	$db_hosts=DBselect('select hostid from hosts where '.DBin_node('hostid'));
-	if(isset($_REQUEST['form'])&&isset($_REQUEST['hostid']) && DBfetch($db_hosts)){
-// FORM
-		$http_wdgt->addItem(insert_httptest_form());
+	if (!isset($_REQUEST['form'])){
+		//creating button "Create scenario"
+		$form_button = new CForm(null, 'get');
+		$form_button->addVar('hostid', $_REQUEST['hostid']);
+		//if host is selected
+		if(!isset($_REQUEST['form']) && ($_REQUEST['hostid'] > 0)){
+			//allowing to press button
+			$create_scenario_button = new CButton('form', S_CREATE_SCENARIO);
+			$create_scenario_button->setEnabled('yes');
+		}
+		else{
+			//adding additional hint to button
+			$create_scenario_button = new CButton('form', S_CREATE_SCENARIO.' '.S_SELECT_HOST_FIRST);
+			//and disabling it
+			$create_scenario_button->setEnabled('no');
+		}
+		$form_button->addItem($create_scenario_button);
 	}
 	else {
-// Table HEADER
+		$form_button = null;
+	}
 
+
+
+	$http_wdgt = new CWidget();
+	$http_wdgt->addPageHeader(S_CONFIGURATION_OF_WEB_MONITORING_BIG, $form_button);
+
+	if (isset($_REQUEST['form']) && isset($_REQUEST['hostid']) && $_REQUEST['hostid']) {
+		$form = new CFormTable(S_SCENARIO);
+		$form->setName('form_scenario');
+
+		if($_REQUEST['groupid'] > 0) {
+			$form->addVar('groupid', $_REQUEST['groupid']);
+		}
+		$form->addVar('hostid', $_REQUEST['hostid']);
+
+		if(isset($_REQUEST['httptestid'])){
+			$form->addVar('httptestid', $_REQUEST['httptestid']);
+		}
+
+		$name = get_request('name', '');
+		$application = get_request('application', '');
+		$delay = get_request('delay', 60);
+		$status = get_request('status', HTTPTEST_STATUS_ACTIVE);
+		$agent = get_request('agent', '');
+		$macros = get_request('macros', array());
+		$steps = get_request('steps', array());
+
+		$authentication = get_request('authentication', HTTPTEST_AUTH_NONE);
+		$http_user = get_request('http_user', '');
+		$http_password = get_request('http_password', '');
+
+		if((isset($_REQUEST["httptestid"]) && !isset($_REQUEST["form_refresh"])) || isset($limited)){
+			$httptest_data = DBfetch(DBselect("SELECT wt.*, a.name as application ".
+				" FROM httptest wt,applications a WHERE wt.httptestid=".$_REQUEST["httptestid"].
+				" AND a.applicationid=wt.applicationid"));
+
+			$name		= $httptest_data['name'];
+			$application	= $httptest_data['application'];
+			$delay		= $httptest_data['delay'];
+			$status		= $httptest_data['status'];
+			$agent		= $httptest_data['agent'];
+			$macros		= $httptest_data['macros'];
+
+			$authentication = $httptest_data['authentication'];
+			$http_user 	= $httptest_data['http_user'];
+			$http_password 	= $httptest_data['http_password'];
+
+			$steps = array();
+			$db_steps = DBselect('SELECT * FROM httpstep WHERE httptestid='.$_REQUEST["httptestid"].' ORDER BY no');
+			while($step_data = DBfetch($db_steps)){
+				$steps[] = $step_data;
+			}
+		}
+
+		$form->addRow(S_APPLICATION,array(
+			new CTextBox('application', $application, 40),
+			SPACE,
+			new CButton('select_app',S_SELECT,
+				'return PopUp("popup.php?dstfrm='.$form->getName().
+				'&dstfld1=application&srctbl=applications'.
+				'&srcfld1=name&only_hostid='.$_REQUEST['hostid'].'",500,600,"application");')
+			));
+
+		$form->addRow(S_NAME, new CTextBox('name', $name, 40));
+
+		$cmbAuth = new CComboBox('authentication', $authentication, 'submit();');
+		$cmbAuth->addItems(httptest_authentications());
+
+		$form->addRow(S_AUTHENTICATION, $cmbAuth);
+		if(in_array($authentication, array(HTTPTEST_AUTH_BASIC, HTTPTEST_AUTH_NTLM))){
+			$form->addRow(S_USER, new CTextBox('http_user', $http_user, 32));
+			$form->addRow(S_PASSWORD, new CTextBox('http_password', $http_password, 40));
+		}
+
+		$form->addRow(S_UPDATE_INTERVAL_IN_SEC, new CNumericBox('delay', $delay, 5));
+
+		$cmbAgent = new CEditableComboBox('agent', $agent, 80);
+// IE6
+		$cmbAgent->addItem('Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 2.0.50727)',
+			'Internet Explorer 6.0 on Windows XP SP2 with .NET Framework 2.0 installed');
+// IE7
+		$cmbAgent->addItem('Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Trident/4.0; .NET CLR 1.1.4322; .NET CLR 2.0.50727; .NET CLR 3.0.04506.648; .NET CLR 3.5.21022)', 'Internet Explorer 7.0 on Windows XP SP3 with .NET Framework 3.5 installed');
+// FF 1.5
+		$cmbAgent->addItem('Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.0.7) Gecko/20060909 Firefox/1.5.0.7',
+			'Mozilla Firefox 1.5.0.7 on Windows XP');
+		$cmbAgent->addItem('Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.0.7) Gecko/20060909 Firefox/1.5.0.7',
+			'Mozilla Firefox 1.5.0.7 on Linux');
+// FF 2.0
+		$cmbAgent->addItem('Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.18) Gecko/20081029 Firefox/2.0.0.18',
+			'Mozilla Firefox 2.0.0.18 on Windows XP');
+		$cmbAgent->addItem('Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.18) Gecko/20081029 Firefox/2.0.0.18',
+			'Mozilla Firefox 2.0.0.18 on Linux');
+// FF 3.0
+		$cmbAgent->addItem('Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.1) Gecko/2008070208 Firefox/3.0.1',
+			'Mozilla Firefox 3.0.1 on Windows XP');
+		$cmbAgent->addItem('Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.1) Gecko/2008070208 Firefox/3.0.1',
+			'Mozilla Firefox 3.0.1 on Linux');
+// OP 9.0
+		$cmbAgent->addItem('Opera/9.02 (Windows NT 5.1; U; en)',
+			'Opera 9.02 on Windows XP');
+		$cmbAgent->addItem('Opera/9.02 (X11; Linux i686; U; en)',
+			'Opera 9.02 on Linux');
+// OP 9.6
+		$cmbAgent->addItem('Opera/9.61 (Windows NT 5.1; U; en) Presto/2.1.1',
+			'Opera 9.61 on Windows XP');
+		$cmbAgent->addItem('Opera/9.61 (X11; Linux i686; U; en) Presto/2.1.1',
+			'Opera 9.61 on Linux');
+// SF 3.1
+		$cmbAgent->addItem('Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US) AppleWebKit/525.19 (KHTML, like Gecko) Version/3.1.2 Safari/525.21',
+			'Safari 3.1.2 on Windows XP');
+		$cmbAgent->addItem('Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_5_4; en-us) AppleWebKit/527.2+ (KHTML, like Gecko) Version/3.1.2 Safari/525.20.1',
+			'Safari 3.1.2 on Intel Mac OS X 10.5.4');
+		$cmbAgent->addItem('Mozilla/5.0 (iPhone; U; CPU iPhone OS 2_1 like Mac OS X; fr-fr) AppleWebKit/525.18.1 (KHTML, like Gecko) Mobile/5F136',
+			'Safari on iPhone');
+
+		$cmbAgent->addItem('Lynx/2.8.4rel.1 libwww-FM/2.14',
+			'Lynx 2.8.4rel.1 on Linux');
+		$cmbAgent->addItem('Googlebot/2.1 (+http://www.google.com/bot.html)',
+			'Googlebot');
+		$form->addRow(S_AGENT, $cmbAgent);
+
+		$cmbStatus = new CComboBox("status", $status);
+		foreach(array(HTTPTEST_STATUS_ACTIVE, HTTPTEST_STATUS_DISABLED) as $st)
+			$cmbStatus->addItem($st, httptest_status2str($st));
+		$form->addRow(S_STATUS,$cmbStatus);
+
+		$form->addRow(S_VARIABLES, new CTextArea('macros', $macros, 84, 5));
+
+		$tblSteps = new CTableInfo();
+		$tblSteps->setHeader(array('',S_NAME,S_TIMEOUT,S_URL,S_REQUIRED,S_STATUS,S_SORT));
+		if(count($steps) > 0){
+			$first = min(array_keys($steps));
+			$last = max(array_keys($steps));
+		}
+		foreach($steps as $stepid => $s){
+			if(!isset($s['name']))		$s['name'] = '';
+			if(!isset($s['timeout']))	$s['timeout'] = 15;
+			if(!isset($s['url']))		$s['url'] = '';
+			if(!isset($s['posts']))		$s['posts'] = '';
+			if(!isset($s['required']))	$s['required'] = '';
+
+			$up = null;
+			if($stepid != $first){
+				$up = new CSpan(S_UP,'link');
+				$up->onClick("return create_var('".$form->getName()."','move_up',".$stepid.", true);");
+			}
+
+			$down = null;
+			if($stepid != $last){
+				$down = new CLink(S_DOWN,'link');
+				$down->onClick("return create_var('".$form->getName()."','move_down',".$stepid.", true);");
+			}
+
+			$name = new CSpan($s['name'],'link');
+			$name->onClick('return PopUp("popup_httpstep.php?dstfrm='.$form->getName().
+				'&list_name=steps&stepid='.$stepid.
+				url_param($s['name'],false,'name').
+				url_param($s['timeout'],false,'timeout').
+				url_param($s['url'],false,'url').
+				url_param($s['posts'],false,'posts').
+				url_param($s['required'],false,'required').
+				url_param($s['status_codes'],false,'status_codes').
+				'");');
+
+			if(zbx_strlen($s['url']) > 70){
+				$url = new CTag('span','yes', substr($s['url'],0,35).SPACE.'...'.SPACE.substr($s['url'],zbx_strlen($s['url'])-25,25));
+				$url->setHint($s['url']);
+			}
+			else{
+				$url = $s['url'];
+			}
+
+			$tblSteps->addRow(array(
+				(new CCheckBox('sel_step[]',null,null,$stepid)),
+				$name,
+				$s['timeout'].SPACE.S_SEC_SMALL,
+				$url,
+				htmlspecialchars($s['required']),
+				$s['status_codes'],
+				array($up, isset($up) && isset($down) ? SPACE : null, $down)
+				));
+		}
+		$form->addVar('steps', $steps);
+
+		$form->addRow(S_STEPS, array(
+			(count($steps) > 0) ? array ($tblSteps, BR()) : null ,
+			new CButton('add_step',S_ADD,
+				'return PopUp("popup_httpstep.php?dstfrm='.$form->getName().'");'),
+			(count($steps) > 0) ? new CButton('del_sel_step',S_DELETE_SELECTED) : null
+			));
+
+		$form->addItemToBottomRow(new CButton("save",S_SAVE));
+		if(isset($_REQUEST["httptestid"])){
+			$form->addItemToBottomRow(SPACE);
+			$form->addItemToBottomRow(new CButton("clone",S_CLONE));
+			$form->addItemToBottomRow(SPACE);
+			$form->addItemToBottomRow(new CButtonDelete(S_DELETE_SCENARIO_Q,
+				url_param("form").url_param("httptestid").url_param('hostid')));
+		}
+		$form->addItemToBottomRow(SPACE);
+		$form->addItemToBottomRow(new CButtonCancel());
+
+		$http_wdgt->addItem($form);
+	}
+	else{
 		$form = new CForm(null, 'get');
 
 		$form->addItem(array(S_GROUP.SPACE,$pageFilter->getGroupsCB()));
 		$form->addItem(array(SPACE.S_HOST.SPACE,$pageFilter->getHostsCB()));
-
-		$numrows = new CDiv();
-		$numrows->setAttribute('name','numrows');
 
 		$http_wdgt->addHeader(S_SCENARIOS_BIG, $form);
 
@@ -388,150 +584,114 @@ include_once('include/page_header.php');
 		$table->setHeader(array(
 			new CCheckBox('all_httptests',null, "checkAll('".$form->getName()."','all_httptests','group_httptestid');"),
 			is_show_all_nodes() ? make_sorting_header(S_NODE,'h.hostid') : null,
-			($_REQUEST['hostid']==0) ? make_sorting_header(S_HOST,'h.host'):NULL,
-			make_sorting_header(array($link, SPACE, S_NAME),'wt.name'),
+			($_REQUEST['hostid']==0) ? make_sorting_header(S_HOST,'host'):NULL,
+			make_sorting_header(array($link, SPACE, S_NAME),'name'),
 			S_NUMBER_OF_STEPS,
 			S_UPDATE_INTERVAL,
-			make_sorting_header(S_STATUS,'wt.status')));
-
-		$any_app_exist = false;
+			make_sorting_header(S_STATUS,'status')));
 
 		$db_apps = array();
-		$db_appids = array();
 
-/* sorting
-		order_page_result($applications, 'name');
-
-// PAGING UPPER
-		$paging = getPagingLine($applications);
-		$http_wdgt->addItem($paging);
-//-------*/
 		$http_wdgt->addItem(BR());
 
-
 		$sql_where = '';
-		if($_REQUEST['hostid']>0){
+		if ($_REQUEST['hostid'] > 0) {
 			$sql_where = ' AND h.hostid='.$_REQUEST['hostid'];
 		}
-
-		$sql = 'SELECT DISTINCT h.host,h.hostid,a.* '.
-				' FROM applications a,hosts h '.
-				' WHERE a.hostid=h.hostid '.
+		$sql = 'SELECT DISTINCT h.host,h.hostid,a.*'.
+				' FROM applications a,hosts h'.
+				' WHERE a.hostid=h.hostid'.
 					$sql_where.
-					' AND '.DBcondition('h.hostid',$available_hosts).
-				order_by('a.applicationid,h.host,h.hostid','a.name');
+					' AND '.DBcondition('h.hostid', $available_hosts);
 		$db_app_res = DBselect($sql);
-		while($db_app = DBfetch($db_app_res)){
+		while ($db_app = DBfetch($db_app_res)) {
 			$db_app['scenarios_cnt'] = 0;
 
 			$db_apps[$db_app['applicationid']] = $db_app;
-			$db_appids[$db_app['applicationid']] = $db_app['applicationid'];
 		}
-
 
 		$db_httptests = array();
-		$db_httptestids = array();
-
-		$sql = 'SELECT wt.*,a.name as application, h.host,h.hostid '.
-			' FROM httptest wt '.
-				' LEFT JOIN applications a on wt.applicationid=a.applicationid '.
-				' LEFT JOIN hosts h on h.hostid=a.hostid '.
-			' WHERE '.DBcondition('a.applicationid',$db_appids).
-				($showdisabled==0?' AND wt.status <> 1':'').
-			order_by('wt.name,wt.status','h.host');
-//SDI($sql);
+		$sql = 'SELECT wt.*,a.name AS application,h.host,h.hostid'.
+				' FROM httptest wt,applications a,hosts h'.
+				' WHERE wt.applicationid=a.applicationid'.
+					' AND a.hostid=h.hostid'.
+					' AND '.DBcondition('a.applicationid', array_keys($db_apps)).
+					($showdisabled == 0 ? ' AND wt.status='.HTTPTEST_STATUS_ACTIVE : '');
 		$db_httptests_res = DBselect($sql);
-		while($httptest_data = DBfetch($db_httptests_res)){
-			$httptest_data['step_cout'] = null;
+		while ($httptest_data = DBfetch($db_httptests_res)) {
 			$db_apps[$httptest_data['applicationid']]['scenarios_cnt']++;
 
+			$httptest_data['step_count'] = null;
 			$db_httptests[$httptest_data['httptestid']] = $httptest_data;
-			$db_httptestids[$httptest_data['httptestid']] = $httptest_data['httptestid'];
 		}
 
-		$sql = 'SELECT hs.httptestid, COUNT(hs.httpstepid) as cnt '.
+		$sql = 'SELECT hs.httptestid,COUNT(hs.httpstepid) AS cnt'.
 				' FROM httpstep hs'.
-				' WHERE '.DBcondition('hs.httptestid',$db_httptestids).
+				' WHERE '.DBcondition('hs.httptestid', array_keys($db_httptests)).
 				' GROUP BY hs.httptestid';
-//SDI($sql);
 		$httpstep_res = DBselect($sql);
-		while($step_cout = DBfetch($httpstep_res)){
-			$db_httptests[$step_cout['httptestid']]['step_cout'] = $step_cout['cnt'];
+		while ($step_count = DBfetch($httpstep_res)) {
+			$db_httptests[$step_count['httptestid']]['step_count'] = $step_count['cnt'];
 		}
+
+		order_result($db_httptests, getPageSortField('host'), getPageSortOrder());
 
 		$tab_rows = array();
-		foreach($db_httptests as $httptestid => $httptest_data){
-			$db_app = &$db_apps[$httptest_data['applicationid']];
+		foreach ($db_httptests as $httptestid => $httptest_data) {
+			$db_app = $db_apps[$httptest_data['applicationid']];
 
-			if(!isset($tab_rows[$db_app['applicationid']])) $tab_rows[$db_app['applicationid']] = array();
-			$app_rows = &$tab_rows[$db_app['applicationid']];
+			if (!isset($tab_rows[$db_app['applicationid']])) {
+				$tab_rows[$db_app['applicationid']] = array();
+			}
 
-			if(!uint_in_array($db_app['applicationid'],$_REQUEST['applications']) && !isset($show_all_apps)) continue;
+			if(!uint_in_array($db_app['applicationid'], $_REQUEST['applications']) && !isset($show_all_apps)) {
+				continue;
+			}
 
-			$name = array();
-			array_push($name, new CLink($httptest_data['name'],'?form=update'.
-									'&httptestid='.$httptest_data['httptestid'].
-									'&hostid='.$db_app['hostid'].
-									url_param('groupid'),
-								NULL));
-
-			$status=new CCol(new CLink(httptest_status2str($httptest_data['status']),
-					'?group_httptestid[]='.$httptest_data['httptestid'].
-					'&go='.($httptest_data['status']?'activate':'disable'),
-					httptest_status2style($httptest_data['status'])));
+			$status = new CCol(new CLink(httptest_status2str($httptest_data['status']),
+				'?group_httptestid[]='.$httptest_data['httptestid'].
+				'&go='.($httptest_data['status'] ? 'activate' : 'disable'),
+				httptest_status2style($httptest_data['status'])));
 
 
-			$chkBox = new CCheckBox('group_httptestid['.$httptest_data['httptestid'].']',null,null,$httptest_data['httptestid']);
-
-			$step_cout = DBfetch(DBselect('select count(*) as cnt from httpstep where httptestid='.$httptest_data['httptestid']));
-			$step_cout = $step_cout['cnt'];
-
-			array_push($app_rows,
-				new CRow(array(
-					$chkBox,
-					is_show_all_nodes()?SPACE:NULL,
-					($_REQUEST['hostid']>0) ? null : $db_app['host'],
-					array(str_repeat(SPACE,4), $name),
-					$step_cout,
-					$httptest_data['delay'],
-					$status
-				)));
+			$tab_rows[$db_app['applicationid']][] = array(
+				new CCheckBox('group_httptestid['.$httptest_data['httptestid'].']', null, null, $httptest_data['httptestid']),
+				is_show_all_nodes() ? SPACE : NULL,
+				($_REQUEST['hostid'] > 0) ? null : $db_app['host'],
+				new CLink($httptest_data['name'], '?form=update'.'&httptestid='.$httptest_data['httptestid'].
+						'&hostid='.$db_app['hostid'].url_param('groupid')),
+				$httptest_data['step_count'],
+				$httptest_data['delay'],
+				$status
+			);
 		}
-		unset($app_rows);
-		unset($db_app);
 
-		foreach($tab_rows as $appid => $app_rows){
-			$db_app = &$db_apps[$appid];
+		foreach ($tab_rows as $appid => $app_rows) {
+			$db_app = $db_apps[$appid];
 
-			if(uint_in_array($db_app['applicationid'],$_REQUEST['applications']) || isset($show_all_apps))
+			if (uint_in_array($db_app['applicationid'],$_REQUEST['applications']) || isset($show_all_apps)) {
 				$link = new CLink(new CImg('images/general/opened.gif'),
 					'?close=1&applicationid='.$db_app['applicationid'].
-					url_param('groupid').url_param('hostid').url_param('applications').
-					url_param('select'));
-			else
+							url_param('groupid').url_param('hostid').url_param('applications').url_param('select'));
+			}
+			else {
 				$link = new CLink(new CImg('images/general/closed.gif'),
 					'?open=1&applicationid='.$db_app['applicationid'].
-					url_param('groupid').url_param('hostid').url_param('applications').
-					url_param('select'));
+							url_param('groupid').url_param('hostid').url_param('applications').url_param('select'));
+			}
 
-			$col = new CCol(array($link,SPACE,bold($db_app['name']),SPACE.'('.$db_app['scenarios_cnt'].SPACE.S_SCENARIOS.')'));
+			$col = new CCol(array($link, SPACE, bold($db_app['name']), SPACE.'('.$db_app['scenarios_cnt'].SPACE.S_SCENARIOS.')'));
 			$col->setColSpan(6);
 
 			$table->addRow(array(
-					get_node_name_by_elid($db_app['applicationid']),
-					$col
-				));
+				get_node_name_by_elid($db_app['applicationid']),
+				$col
+			));
 
-			$any_app_exist = true;
-
-			foreach($app_rows as $row)
+			foreach ($app_rows as $row) {
 				$table->addRow($row);
+			}
 		}
-
-// PAGING FOOTER
-//		$table->addRow(new CCol($paging));
-//		$http_wdgt->addItem($paging);
-//---------
 
 //----- GO ------
 		$goBox = new CComboBox('go');

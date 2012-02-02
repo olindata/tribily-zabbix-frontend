@@ -28,6 +28,7 @@ $page['title']	= 'S_ACKNOWLEDGES';
 $page['file']	= 'acknow.php';
 $page['hist_arg'] = array('eventid');
 
+ob_start();
 include_once('include/page_header.php');
 
 ?>
@@ -41,6 +42,8 @@ include_once('include/page_header.php');
 		'triggers' =>		array(T_ZBX_INT, O_OPT,	P_SYS,	DB_ID,	null),
 		'events'=>			array(T_ZBX_INT, O_OPT,	P_SYS,	DB_ID,	null),
 		'message'=>			array(T_ZBX_STR, O_OPT,	NULL,	$bulk ? NULL : NOT_EMPTY,	'isset({save})||isset({saveandreturn})'),
+		'backurl'=>			array(T_ZBX_STR, O_OPT,	NULL,	NULL,	null),
+
 // Actions
 		'go'=>				array(T_ZBX_STR, O_OPT, P_SYS|P_ACT, NULL, NULL),
 // form
@@ -50,12 +53,11 @@ include_once('include/page_header.php');
 	);
 	check_fields($fields);
 
+	$_REQUEST['backurl'] = get_request('backurl', 'tr_status.php');
 
 	if(isset($_REQUEST['cancel'])){
-		$last_page = $USER_DETAILS['last_page'];
-		$url = $last_page ? new CUrl($last_page['url']) : new CUrl('tr_status.php?hostid='.CProfile::get('web.tr_status.hostid', 0));
-		jsRedirect($url->getUrl());
-		exit();
+		ob_end_clean();
+		redirect($_REQUEST['backurl']);
 	}
 
 	if(!isset($_REQUEST['events']) && !isset($_REQUEST['eventid']) && !isset($_REQUEST['triggers'])){
@@ -97,10 +99,11 @@ include_once('include/page_header.php');
 			$_REQUEST['events'] = CEvent::get($options);
 		}
 
-		$events_data = array(
-			'events' => $_REQUEST['events'],
-			'message' => $_REQUEST['message']);
-		$result = CEvent::acknowledge($events_data);
+		$eventsData = array(
+			'eventids' => zbx_objectValues($_REQUEST['events'], 'eventid'),
+			'message' => $_REQUEST['message']
+		);
+		$result = CEvent::acknowledge($eventsData);
 
 		show_messages($result, S_EVENT_ACKNOWLEDGED, S_CANNOT_ACKNOWLEDGE_EVENT);
 		if($result){
@@ -111,27 +114,19 @@ include_once('include/page_header.php');
 		}
 
 		if(isset($_REQUEST['saveandreturn'])){
-			$last_page = $USER_DETAILS['last_page'];
-
-			if(!$last_page){
-				$url = new CUrl('tr_status.php?hostid='.CProfile::get('web.tr_status.hostid', 0));
-			}
-			else{
-				$url = new CUrl($last_page['url']);
-			}
-
-			jsRedirect($url->getUrl());
-			exit();
+			ob_end_clean();
+			redirect($_REQUEST['backurl']);
 		}
-
  	}
+
+ob_end_flush();
 
 ?>
 <?php
 	$msg = $bulk ? ' BULK ACKNOWLEDGE ' : expand_trigger_description_by_data($event_trigger);
 	show_table_header(array(S_ALARM_ACKNOWLEDGES_BIG.': ', $msg));
 	print(SBR);
-	
+
 	if($bulk){
 		$title = S_ACKNOWLEDGE_ALARM_BY;
 		$btn_txt2 = S_ACKNOWLEDGE.' '.S_AND_SYMB.' '.S_RETURN;
@@ -143,8 +138,8 @@ include_once('include/page_header.php');
 			$table->setAlign('center');
 
 			while($db_ack = DBfetch($db_acks)){
-				//$db_user = CUser::get(array('userids' => $db_ack['userid'], 'extendoutput' => 1));
-				//$db_user = reset($db_user);
+				//$db_users = CUser::get(array('userids' => $db_ack['userid'], 'output' => API_OUTPUT_EXTEND));
+				//$db_user = reset($db_users);
 
 				$table->addRow(array(
 					new CCol($db_ack['alias'], 'user'),
@@ -174,6 +169,8 @@ include_once('include/page_header.php');
 
 	$frmMsg = new CFormTable($title.' "'.$USER_DETAILS['alias'].'"');
 
+	$frmMsg->addVar('backurl', $_REQUEST['backurl']);
+
 	if(isset($_REQUEST['eventid'])){
 		$frmMsg->addVar('eventid', $_REQUEST['eventid']);
 	}
@@ -192,13 +189,10 @@ include_once('include/page_header.php');
 	$frmMsg->addRow(S_MESSAGE, new CTextArea('message', '', 80, 6));
 	$frmMsg->addItemToBottomRow(new CButton('saveandreturn', $btn_txt2));
 	$bulk ? '' : $frmMsg->addItemToBottomRow(new CButton('save', $btn_txt));
-	$frmMsg->addItemToBottomRow(new CButtonCancel());
+	$frmMsg->addItemToBottomRow(new CButtonCancel('&backurl='.urlencode($_REQUEST['backurl'])));
 
 	$frmMsg->show(false);
 
-?>
-<?php
 
 include_once('include/page_footer.php');
-
 ?>

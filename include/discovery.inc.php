@@ -35,53 +35,55 @@ require_once('include/perm.inc.php');
 	}
 
 	function svc_default_port($type_int){
-		$port = '0';
+		$port = 0;
 
 		switch($type_int){
-			case SVC_SSH:		$port = '22';		break;
-			case SVC_LDAP:		$port = '389';		break;
-			case SVC_SMTP:		$port = '25';		break;
-			case SVC_FTP:		$port = '21';		break;
-			case SVC_HTTP:		$port = '80';		break;
-			case SVC_POP:		$port = '110';		break;
-			case SVC_NNTP:		$port = '119';		break;
-			case SVC_IMAP:		$port = '143';		break;
-			case SVC_TCP:		$port = '80';		break;
-			case SVC_AGENT:		$port = '10050';	break;
-			case SVC_SNMPv1:	$port = '161';		break;
-			case SVC_SNMPv2:	$port = '161';		break;
-			case SVC_SNMPv3:	$port = '161';		break;
-			case SVC_ICMPPING:	$port = '0';		break;
+			case SVC_SSH: $port = '22'; break;
+			case SVC_LDAP: $port = '389'; break;
+			case SVC_SMTP: $port = '25'; break;
+			case SVC_FTP: $port = '21'; break;
+			case SVC_HTTP: $port = '80'; break;
+			case SVC_POP: $port = '110'; break;
+			case SVC_NNTP: $port = '119'; break;
+			case SVC_IMAP: $port = '143'; break;
+			case SVC_AGENT: $port = '10050'; break;
+			case SVC_SNMPv1: $port = '161'; break;
+			case SVC_SNMPv2: $port = '161'; break;
+			case SVC_SNMPv3: $port = '161'; break;
 		}
-
-	return $port;
+		return $port;
 	}
 
-	function discovery_check_type2str($type_int){
-		$str_type[SVC_SSH]	= S_SSH;
-		$str_type[SVC_LDAP]	= S_LDAP;
-		$str_type[SVC_SMTP]	= S_SMTP;
-		$str_type[SVC_FTP]	= S_FTP;
-		$str_type[SVC_HTTP]	= S_HTTP;
-		$str_type[SVC_POP]	= S_POP;
-		$str_type[SVC_NNTP]	= S_NNTP;
-		$str_type[SVC_IMAP]	= S_IMAP;
-		$str_type[SVC_TCP]	= S_TCP;
-		$str_type[SVC_AGENT]	= S_ZABBIX_AGENT;
-		$str_type[SVC_SNMPv1]	= S_SNMPV1_AGENT;
-		$str_type[SVC_SNMPv2]	= S_SNMPV2_AGENT;
-		$str_type[SVC_SNMPv3]	= S_SNMPV3_AGENT;
-		$str_type[SVC_ICMPPING]	= S_ICMPPING;
+	function discovery_check_type2str($type=null){
+		$discovery_types = array(
+			SVC_SSH => S_SSH,
+			SVC_LDAP => S_LDAP,
+			SVC_SMTP => S_SMTP,
+			SVC_FTP => S_FTP,
+			SVC_HTTP => S_HTTP,
+			SVC_POP => S_POP,
+			SVC_NNTP => S_NNTP,
+			SVC_IMAP => S_IMAP,
+			SVC_TCP => S_TCP,
+			SVC_AGENT => S_ZABBIX_AGENT,
+			SVC_SNMPv1 => S_SNMPV1_AGENT,
+			SVC_SNMPv2 => S_SNMPV2_AGENT,
+			SVC_SNMPv3 => S_SNMPV3_AGENT,
+			SVC_ICMPPING => S_ICMPPING,
+		);
 
-		if(isset($str_type[$type_int]))
-			return $str_type[$type_int];
-
-		return S_UNKNOWN;
+		if(is_null($type)){
+			order_result($discovery_types);
+			return $discovery_types;
+		}
+		else if(isset($discovery_types[$type]))
+			return $discovery_types[$type];
+		else
+			return S_UNKNOWN;
 	}
 
-	function discovery_check2str($type, $snmp_community, $key_, $ports){
-		$external_param = null;
-		$port_def = svc_default_port($type);
+	function discovery_check2str($type, $snmp_community, $key_, $port){
+		$external_param = '';
 
 		switch($type){
 			case SVC_SNMPv1:
@@ -91,15 +93,20 @@ require_once('include/perm.inc.php');
 				$external_param = ' "'.$key_.'"';
 				break;
 		}
+		$result = discovery_check_type2str($type);
+		if((svc_default_port($type) != $port) || ($type == SVC_TCP))
+			$result .= ' ('.$port.')';
+		$result .= $external_param;
 
-		return discovery_check_type2str($type).($port_def == $ports ? '' : ' ('.$ports.')').$external_param;
+		return $result;
 	}
 
 	function discovery_port2str($type_int, $port){
 		$port_def = svc_default_port($type_int);
 
-		if ($port != $port_def)
-			return '['.$port.']';
+		if($port != $port_def){
+			return ' ('.$port.')';
+		}
 
 	return '';
 	}
@@ -149,6 +156,15 @@ require_once('include/perm.inc.php');
 	function add_discovery_check($druleid, $type, $ports, $key, $snmp_community,
 			$snmpv3_securityname, $snmpv3_securitylevel, $snmpv3_authpassphrase, $snmpv3_privpassphrase)
 	{
+		// no need to store those items in DB if they will not be used
+		if($snmpv3_securitylevel == ITEM_SNMPV3_SECURITYLEVEL_NOAUTHNOPRIV){
+			$snmpv3_authpassphrase = '';
+			$snmpv3_privpassphrase = '';
+		}
+		if($snmpv3_securitylevel == ITEM_SNMPV3_SECURITYLEVEL_AUTHNOPRIV){
+			$snmpv3_privpassphrase = '';
+		}
+
 		$dcheckid = get_dbid('dchecks', 'dcheckid');
 		$result = DBexecute('insert into dchecks (dcheckid,druleid,type,ports,key_,snmp_community'.
 				',snmpv3_securityname,snmpv3_securitylevel,snmpv3_authpassphrase,snmpv3_privpassphrase) '.
@@ -163,8 +179,14 @@ require_once('include/perm.inc.php');
 	}
 
 	function add_discovery_rule($proxy_hostid, $name, $iprange, $delay, $status, $dchecks, $uniqueness_criteria){
-		if( !validate_ip_range($iprange) ){
+		if(!validate_ip_range($iprange)){
 			error(S_INCORRECT_IP_RANGE);
+			return false;
+		}
+
+		// checking to the duplicate of the name
+		if(CDRule::exists(array('name' => $name))){
+			error(S_DISCOVERY_RULE.SPACE.'['.$name.']'.SPACE.S_ALREADY_EXISTS_SMALL);
 			return false;
 		}
 
@@ -196,6 +218,15 @@ require_once('include/perm.inc.php');
 			error(S_INCORRECT_IP_RANGE);
 			return false;
 
+		}
+
+		// checking to the duplicate of the name
+		$drule = get_discovery_rule_by_druleid($druleid);
+		if(strcmp($drule['name'], $name)){
+			if(CDRule::exists(array('name' => $name))){
+				error(S_DISCOVERY_RULE.SPACE.'['.$name.']'.SPACE.S_ALREADY_EXISTS_SMALL);
+				return false;
+			}
 		}
 
 		$result = DBexecute('update drules set proxy_hostid='.$proxy_hostid.',name='.zbx_dbstr($name).',iprange='.zbx_dbstr($iprange).','.

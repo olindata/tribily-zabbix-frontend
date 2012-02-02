@@ -24,18 +24,12 @@ require_once('include/hosts.inc.php');
 require_once('include/triggers.inc.php');
 require_once('include/items.inc.php');
 
-$page['title'] = 'S_TRIGGER_LOG';
+$page['title'] = 'S_TRIGGER_LOG_FORM';
 $page['file'] = 'tr_logform.php';
 $page['scripts'] = array();
 $page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
 define('ZBX_PAGE_NO_MENU', 1);
-
-$strltype = array();
-$strltype[] = 'log[%';
-$strltype[] = 'logrt[%';
-$strltype[] = 'eventlog[%';
-$strltype[] = 'snmptraps';
 
 include_once('include/page_header.php');
 ?>
@@ -64,7 +58,6 @@ include_once('include/page_header.php');
 		'form_refresh'=>	array(T_ZBX_INT, O_OPT,	 NULL,		NULL,	NULL),
 		'save_trigger'=>	array(T_ZBX_STR, O_OPT,	 P_SYS|P_ACT,	NULL,	null),
 		'keys'=> 			array(T_ZBX_STR, O_OPT,  NULL,		NULL,	NULL),
-		'ltype'=> 			array(T_ZBX_INT, O_OPT,  NULL,		IN('0,1,2'),NULL)
 	);
 
 	check_fields($fields);
@@ -85,15 +78,30 @@ if(isset($_REQUEST['save_trigger'])){
 
 		//if(isset($_REQUEST['type']))	{ $type=TRIGGER_MULT_EVENT_ENABLED; }
 		//else{ $type=TRIGGER_MULT_EVENT_DISABLED; }
-		$type=TRIGGER_MULT_EVENT_ENABLED;
-
-		$deps = get_request('dependences',array());
+		$type = TRIGGER_MULT_EVENT_ENABLED;
 
 		if(isset($_REQUEST['triggerid'])){
-			$trigger_data = get_trigger_by_triggerid($_REQUEST['triggerid']);
-			if($trigger_data['templateid']){
-				$_REQUEST['description'] = $trigger_data['description'];
-				$expression = explode_exp($trigger_data['expression'],0);
+			$options = array(
+				'triggerids' => $_REQUEST['triggerid'],
+				'output' => API_OUTPUT_EXTEND,
+				'select_dependencies' => API_OUTPUT_REFER
+			);
+			$triggersData = CTrigger::get($options);
+			$triggerData = reset($triggersData);
+
+// Saving dependencies
+// TODO: add dependencies to CTrigger::update
+			$deps = array();
+			foreach($triggerData['dependencies'] as $dnum => $depTrigger){
+				$deps[] = array(
+					'triggerid' => $triggerData['triggerid'],
+					'dependsOnTriggerid' => $depTrigger['triggerid']
+				);
+			}
+//---
+			if($triggerData['templateid']){
+				$_REQUEST['description'] = $triggerData['description'];
+				$expression = explode_exp($triggerData['expression']);
 			}
 
 			$trigger = array();
@@ -108,9 +116,7 @@ if(isset($_REQUEST['save_trigger'])){
 
 			DBstart();
 			$result = CTrigger::update($trigger);
-//			update_trigger($_REQUEST['triggerid'],$expression,$_REQUEST["description"],$type,$_REQUEST["priority"],$status,$_REQUEST["comments"],$_REQUEST["url"],$deps, $trigger_data['templateid']);
 
-			$result &= CTrigger::deleteDependencies($trigger);
 			$result &= CTrigger::addDependencies($deps);
 //REVERT
 			$result = DBend($result);
@@ -148,11 +154,6 @@ if(isset($_REQUEST['save_trigger'])){
 				}
 			}
 
-//			$triggerid=add_trigger($expression,$_REQUEST["description"],$type,$_REQUEST["priority"],$status,$_REQUEST["comments"],$_REQUEST["url"],$deps);
-
-			$result &= CTrigger::addDependencies($deps);
-
-
 			$result = DBend($result);
 
 			// $result = $triggerid;
@@ -165,7 +166,7 @@ if(isset($_REQUEST['save_trigger'])){
 			add_audit($audit_action, AUDIT_RESOURCE_TRIGGER, S_TRIGGER." [".$triggerid."] [".expand_trigger_description($triggerid)."] ");
 			unset($_REQUEST["sform"]);
 
-			zbx_add_post_js('closeform("items.php");');
+			zbx_add_post_js('closeForm("items.php");');
 			include_once('include/page_footer.php');
 		}
 	}
@@ -180,13 +181,6 @@ if(isset($_REQUEST['sform'])){
 	$frmTRLog->setTableClass('formlongtable formtable');
 	$frmTRLog->addVar('form_refresh',get_request('form_refresh',1));
 
-	$ltype = 0;
-	$matchkey = $strltype[$ltype];
-	if(isset($_REQUEST['ltype'])) {
-		$frmTRLog->addVar('ltype',$_REQUEST['ltype']);
-		$matchkey = $strltype[$_REQUEST['ltype']];
-		$ltype=$_REQUEST['ltype'];
-	}
 	if(isset($_REQUEST['triggerid'])) $frmTRLog->addVar('triggerid',$_REQUEST['triggerid']);
 
 	if(isset($_REQUEST['triggerid']) && !isset($_REQUEST['form_refresh'])){
@@ -198,8 +192,7 @@ if(isset($_REQUEST['sform'])){
 					' WHERE t.triggerid='.$_REQUEST['triggerid'].
 						' AND i.itemid=f.itemid '.
 						' AND f.triggerid = t.triggerid '.
-						' AND i.value_type IN ('.ITEM_VALUE_TYPE_LOG.' , '.ITEM_VALUE_TYPE_TEXT.', '.ITEM_VALUE_TYPE_STR.')'.
-						' AND i.key_ LIKE \''.$matchkey.'\'';
+						' AND i.value_type IN ('.ITEM_VALUE_TYPE_LOG.' , '.ITEM_VALUE_TYPE_TEXT.', '.ITEM_VALUE_TYPE_STR.')';
 
 		$res = DBselect($sql);
 		while($rows = DBfetch($res)){
@@ -236,7 +229,7 @@ if(isset($_REQUEST['sform'])){
 			}
 
 			$value = preg_replace('/([=|#]0)/','',$expr);
-			$value = preg_replace('/\((.*?)\)/u','$1',$value);
+			$value = preg_replace('/^\((.*)\)$/u','$1',$value); // removing wrapping parentheses
 
 			$expressions[$id]['value'] = trim($value);
 			$expressions[$id]['type'] = (zbx_strpos($expr,'#0',zbx_strlen($expr)-3) === false)?(REGEXP_EXCLUDE):(REGEXP_INCLUDE);
@@ -336,9 +329,13 @@ if(isset($_REQUEST['sform'])){
 	$maxid=0;
 
 	$bExprResult = true;
-
+	$exprData = new CTriggerExpression(array(
+		'expression'=> empty($expressions) ? '' : construct_expression($itemid,$expressions)
+	));
 	if(isset($_REQUEST['triggerid']) && !isset($_REQUEST['save_trigger'])
-			&& !validate_expression(construct_expression($itemid,$expressions)) && !isset($_REQUEST['form_refresh'])){
+			&& !empty($exprData->errors) && !isset($_REQUEST['form_refresh'])){
+
+		info($exprData->errors);
 
 		unset($expressions);
 		$expressions[0]['value'] = $expr_incase;
@@ -421,6 +418,9 @@ if(isset($_REQUEST['sform'])){
 }
 //------------------------ </FORM> ---------------------------
 
+?>
+<?php
 
 include_once('include/page_footer.php');
+
 ?>

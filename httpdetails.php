@@ -27,7 +27,7 @@
 	$page['title'] = 'S_DETAILS_OF_SCENARIO';
 	$page['file'] = 'httpdetails.php';
 	$page['hist_arg'] = array('httptestid');
-	$page['scripts'] = array('effects.js','dragdrop.js','class.calendar.js','gtlc.js');
+	$page['scripts'] = array('class.calendar.js','gtlc.js');
 
 	$page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
@@ -62,6 +62,12 @@
 		if('timeline' == $_REQUEST['favobj']){
 			if(isset($_REQUEST['favid']) && isset($_REQUEST['period'])){
 				navigation_bar_calc('web.httptest', $_REQUEST['favid'], true);
+			}
+		}
+		// saving fixed/dynamic setting to profile
+		if('timelinefixedperiod' == $_REQUEST['favobj']){
+			if(isset($_REQUEST['favid'])){
+				CProfile::update('web.httptest.timelinefixed', $_REQUEST['favid'], PROFILE_TYPE_INT);
 			}
 		}
 	}
@@ -149,7 +155,7 @@
 		}
 
 		$itemids = array();
-		$sql = 'SELECT i.*, hi.type as httpitem_type '.
+		$sql = 'SELECT i.lastvalue, i.value_type, i.valuemapid, i.units, i.itemid, hi.type as httpitem_type '.
 				' FROM items i, httpstepitem hi '.
 				' WHERE hi.itemid=i.itemid '.
 					' AND hi.httpstepid='.$httpstep_data['httpstepid'];
@@ -169,11 +175,14 @@
 			$itemids[] = $item_data['itemid'];
 		}
 
+		$speed = format_lastvalue($httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_IN]);
+		$respTime = $httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_TIME]['lastvalue'];
+		$resp = format_lastvalue($httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_RSPCODE]);
 		$table->addRow(array(
 			$httpstep_data['name'],
-			format_lastvalue($httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_IN]),
-			format_lastvalue($httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_TIME]),
-			format_lastvalue($httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_RSPCODE]),
+			($speed == 0 ? '-' : $speed),
+			($respTime == 0 ? '-' : format_lastvalue($httpstep_data['item_data'][HTTPSTEP_ITEM_TYPE_TIME])),
+			($resp == 0 ? '-' : $resp),
 			new CSpan($status['msg'], $status['style'])
 		));
 	}
@@ -195,11 +204,11 @@
 	}
 
 	$table->addRow(array(
-		new CCol(S_TOTAL_BIG, 'bold'),
-		new CCol(SPACE, 'bold'),
-		new CCol(format_lastvalue($totalTime), 'bold'),
-		new CCol(SPACE, 'bold'),
-		new CCol(new CSpan($status['msg'], $status['style']), 'bold')
+		new CSpan(S_TOTAL_BIG, 'bold'),
+		SPACE,
+		new CSpan(format_lastvalue($totalTime), 'bold'),
+		SPACE,
+		new CSpan($status['msg'], $status['style'].' bold')
 	));
 
 	$details_wdgt->addItem($table);
@@ -261,7 +270,8 @@
 		'loadImage' => 1,
 		'loadScroll' => 0,
 		'dynamic' => 1,
-		'mainObject' => 1
+		'mainObject' => 1,
+		'periodFixed' => CProfile::get('web.httptest.timelinefixed', 1)
 	);
 	zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
 
@@ -285,7 +295,8 @@
 		'loadImage' => 1,
 		'loadScroll' => 0,
 		'dynamic' => 1,
-		'mainObject' => 1
+		'mainObject' => 1,
+		'periodFixed' => CProfile::get('web.httptest.timelinefixed', 1)
 	);
 	zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
 //-------------
@@ -299,7 +310,8 @@
 		'loadScroll' => 1,
 		'scrollWidthByImage' => 0,
 		'dynamic' => 1,
-		'mainObject' => 1
+		'mainObject' => 1,
+		'periodFixed' => CProfile::get('web.httptest.timelinefixed', 1)
 	);
 
 	zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
@@ -309,7 +321,5 @@
 
 ?>
 <?php
-
 include_once('include/page_footer.php');
-
 ?>

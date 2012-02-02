@@ -176,8 +176,14 @@ class Curl{
 			foreach($args as $id => $arg){
 				if(empty($arg)) continue;
 
-				list($name, $value) = explode('=',$arg);
-				$this->arguments[$name] = isset($value) ? urldecode($value):'';
+				if(strpos($arg, '=') !== false){
+					list($name, $value) = explode('=', $arg);
+					$this->arguments[$name] = isset($value) ? urldecode($value):'';
+				}
+				else{
+					$this->arguments[$arg] = '';
+				}
+
 			}
 		}
 		$this->formatQuery();
@@ -187,8 +193,14 @@ class Curl{
 		$this->formatQuery();
 
 		$url = $this->protocol ? $this->protocol.'://' : '';
+
 		$url .= $this->username ? $this->username : '';
 		$url .= $this->password ? ':'.$this->password : '';
+
+		if($this->username || $this->password){
+			$url .= '@';
+		}
+
 		$url .= $this->host ? $this->host : '';
 		$url .= $this->port ? ':'.$this->port : '';
 		$url .= $this->path ? $this->path : '';

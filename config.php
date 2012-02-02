@@ -60,6 +60,7 @@ include_once('include/page_header.php');
 		'save'=>			array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	NULL,	NULL),
 		'delete'=>			array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	NULL,	NULL),
 		'cancel'=>			array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	NULL,	NULL),
+		'go'=>				array(T_ZBX_STR, O_OPT, P_SYS|P_ACT,	NULL,	NULL),
 /* GUI */
 		'event_ack_enable'=>		array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	IN('0,1'),		'isset({config})&&({config}==8)&&isset({save})'),
 		'event_expire'=> 			array(T_ZBX_INT, O_OPT, P_SYS|P_ACT,	BETWEEN(1,99999),	'isset({config})&&({config}==8)&&isset({save})'),
@@ -126,6 +127,8 @@ include_once('include/page_header.php');
 					error(S_IMAGE_SIZE_MUST_BE_LESS_THAN_MB);
 					return false;
 				}
+
+				$image = base64_encode($image);
 			}
 
 			if(isset($_REQUEST['imageid'])){
@@ -172,7 +175,7 @@ include_once('include/page_header.php');
 		else if(isset($_REQUEST['delete'])&&isset($_REQUEST['imageid'])) {
 			$image = get_image_by_imageid($_REQUEST['imageid']);
 
-			$result = CImage::delete(array('imageids' => $_REQUEST['imageid']));
+			$result = CImage::delete($_REQUEST['imageid']);
 
 			show_messages($result, S_IMAGE_DELETED, S_CANNOT_DELETE_IMAGE);
 			if($result){
@@ -420,32 +423,41 @@ include_once('include/page_header.php');
 				unset($_REQUEST['form']);
 			}
 		}
-		else if(isset($_REQUEST['delete'])){
-			if(!count(get_accessible_nodes_by_user($USER_DETAILS,PERM_READ_WRITE,PERM_RES_IDS_ARRAY))) access_deny();
-
-			$regexpids = get_request('regexpid', array());
-			if(isset($_REQUEST['regexpids']))
-				$regexpids = $_REQUEST['regexpids'];
-
-			zbx_value2array($regexpids);
-
-			$regexps = array();
-			foreach($regexpids as $id => $regexpid){
-				$regexps[$regexpid] = get_regexp_by_regexpid($regexpid);
-			}
-
-			DBstart();
-			$result = delete_regexp($regexpids);
-			$result = Dbend($result);
-
-			show_messages($result,S_REGULAR_EXPRESSION_DELETED,S_CANNOT_DELETE_REGULAR_EXPRESSION);
-			if($result){
-				foreach($regexps as $regexpid => $regexp){
-					add_audit(AUDIT_ACTION_DELETE,AUDIT_RESOURCE_REGEXP,'Id ['.$regexpid.'] '.S_NAME.' ['.$regexp['name'].']');
+		elseif (isset($_REQUEST['go'])) {
+			if ($_REQUEST['go'] == 'delete') {
+				if (!count(get_accessible_nodes_by_user($USER_DETAILS, PERM_READ_WRITE, PERM_RES_IDS_ARRAY))) {
+					access_deny();
 				}
 
-				unset($_REQUEST['form']);
-				unset($_REQUEST['regexpid']);
+				$regexpids = get_request('regexpid', array());
+				if (isset($_REQUEST['regexpids'])) {
+					$regexpids = $_REQUEST['regexpids'];
+				}
+
+				zbx_value2array($regexpids);
+
+				$regexps = array();
+				foreach($regexpids as $id => $regexpid){
+					$regexps[$regexpid] = get_regexp_by_regexpid($regexpid);
+				}
+
+				DBstart();
+				$result = delete_regexp($regexpids);
+				$result = Dbend($result);
+
+				show_messages($result, S_REGULAR_EXPRESSION_DELETED, S_CANNOT_DELETE_REGULAR_EXPRESSION);
+				if ($result) {
+					foreach ($regexps as $regexpid => $regexp) {
+						add_audit(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_REGEXP, 'Id ['.$regexpid.'] '.S_NAME.' ['.$regexp['name'].']');
+					}
+
+					unset($_REQUEST['form']);
+					unset($_REQUEST['regexpid']);
+
+					$url = new CUrl();
+					$path = $url->getPath();
+					insert_js('cookie.eraseArray("'.$path.'")');
+				}
 			}
 		}
 		else if(inarr_isset(array('add_expression','new_expression'))){
@@ -477,13 +489,13 @@ include_once('include/page_header.php');
 				unset($_REQUEST['new_expression']);
 			}
 		}
-		else if(inarr_isset(array('delete_expression','g_expressionid'))){
-			$_REQUEST['expressions'] = get_request('expressions',array());
-			foreach($_REQUEST['g_expressionid'] as $val){
+		elseif (inarr_isset(array('delete_expression', 'g_expressionid'))) {
+			$_REQUEST['expressions'] = get_request('expressions', array());
+			foreach ($_REQUEST['g_expressionid'] as $val) {
 				unset($_REQUEST['expressions'][$val]);
 			}
 		}
-		else if(inarr_isset(array('edit_expressionid'))){
+		elseif (inarr_isset(array('edit_expressionid'))) {
 			$_REQUEST['edit_expressionid'] = array_keys($_REQUEST['edit_expressionid']);
 			$edit_expressionid = $_REQUEST['edit_expressionid'] = array_pop($_REQUEST['edit_expressionid']);
 			$_REQUEST['expressions'] = get_request('expressions',array());
@@ -495,52 +507,123 @@ include_once('include/page_header.php');
 		}
 	}
 
-	else if($_REQUEST['config'] == 11){ // Macros
-		if(isset($_REQUEST['save'])){
-			try{
+	// Macros
+	else if ($_REQUEST['config'] == 11) {
+		if (isset($_REQUEST['save'])) {
+			try {
 				DBstart();
-				$global_macros = CUserMacro::get(array('globalmacro' => 1, 'extendoutput' => 1));
 
-				$macros = get_request('macros', array());
-				
-				$macros_to_del = array();
-				foreach($global_macros as $gmacro){
-					$del = true;
-					foreach($macros as $nmacro){
-						if($gmacro['macro'] == $nmacro['macro']){
-							$del = false;
-							break;
+				$globalMacros = CUserMacro::get(array('globalmacro' => 1, 'output' => API_OUTPUT_EXTEND));
+				$globalMacros = zbx_toHash($globalMacros, 'macro');
+
+				$newMacros = get_request('macros', array());
+
+				// remove item from new macros array if name and value is empty
+				foreach ($newMacros as $number => $newMacro) {
+					if (zbx_empty($newMacro['macro']) && zbx_empty($newMacro['value'])) {
+						unset($newMacros[$number]);
+					}
+				}
+
+				$duplicatedMacros = array();
+				foreach ($newMacros as $number => $newMacro) {
+					// transform macros to uppercase {$aaa} => {$AAA}
+					$newMacros[$number]['macro'] = zbx_strtoupper($newMacro['macro']);
+
+					// search for duplicates items in new macros array
+					foreach ($newMacros as $duplicateNumber => $duplicateNewMacro) {
+						if ($number != $duplicateNumber && $newMacro['macro'] == $duplicateNewMacro['macro']) {
+							$duplicatedMacros[] = '"'.$duplicateNewMacro['macro'].'"';
 						}
 					}
-					if($del){
-						$macros_to_del[] = $gmacro;
+				}
+
+				// validate duplicates macros
+				if (!empty($duplicatedMacros)) {
+					throw new Exception(S_DUPLICATED_MACRO_FOUND.SPACE.implode(', ', array_unique($duplicatedMacros)));
+				}
+
+				// save filtered macro array
+				$_REQUEST['macros'] = $newMacros;
+
+				// update
+				$macrosToUpdate = array();
+				foreach ($newMacros as $number => $newMacro) {
+					if (isset($globalMacros[$newMacro['macro']])) {
+						$macrosToUpdate[] = $newMacro;
+
+						// remove item from new macros array
+						unset($newMacros[$number]);
 					}
 				}
-				if(!empty($macros_to_del)){
-					if(!CUserMacro::deleteGlobal($macros_to_del))
-						throw new Exception('Can\'t remove macro');
+				if (!empty($macrosToUpdate)) {
+					if (!CUsermacro::updateGlobal($macrosToUpdate)) {
+						throw new Exception(S_CANNOT_UPDATE_MACRO);
+					}
+					foreach ($macrosToUpdate as $macro) {
+						add_audit_ext(AUDIT_ACTION_UPDATE, AUDIT_RESOURCE_MACRO, $globalMacros[$macro['macro']]['globalmacroid'], $macro['macro'].SPACE.RARR.SPACE.$macro['value'], null, null, null);
+					}
 				}
 
-				$result = CUsermacro::updateGlobal($macros);
-				if(!$result){
-					throw new Exception('Cannot update macro');
+				$newMacroMacros = zbx_objectValues($newMacros, 'macro');
+				$newMacroMacros = zbx_toHash($newMacroMacros, 'macro');
+
+				// delete
+				$macrosToDelete = array();
+				$macrosToUpdate = zbx_toHash($macrosToUpdate, 'macro');
+				foreach ($globalMacros as $globalMacro) {
+					if (empty($newMacroMacros[$globalMacro['macro']]) && empty($macrosToUpdate[$globalMacro['macro']])) {
+						$macrosToDelete[] = $globalMacro['macro'];
+
+						// remove item from new macros array
+						foreach ($newMacros as $number => $newMacro) {
+							if ($newMacro['macro'] == $globalMacro['macro']) {
+								unset($newMacros[$number]);
+								break;
+							}
+						}
+					}
+				}
+				if (!empty($macrosToDelete)) {
+					if (!CUserMacro::deleteGlobal($macrosToDelete)) {
+						throw new Exception(S_CANNOT_REMOVE_MACRO);
+					}
+					foreach ($macrosToDelete as $macro) {
+						add_audit_ext(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_MACRO, $globalMacros[$macro]['globalmacroid'], $macro.SPACE.RARR.SPACE.$globalMacros[$macro]['value'], null, null, null);
+					}
 				}
 
-				$result = CUsermacro::createGlobal($macros);
-				if(!$result){
-					throw new Exception('Cannot add macro');
+				// create
+				if (!empty($newMacros)) {
+					// mark marcos as new
+					foreach ($newMacros as $number => $macro) {
+						$_REQUEST['macros'][$number]['type'] = 'new';
+					}
+
+					$newMacrosIds = CUsermacro::createGlobal(array_values($newMacros));
+					if (!$newMacrosIds) {
+						throw new Exception(S_CANNOT_ADD_MACRO);
+					}
+					$newMacrosCreated = CUserMacro::get(array(
+						'globalmacroids' => $newMacrosIds['globalmacroids'],
+						'globalmacro' => 1,
+						'output' => API_OUTPUT_EXTEND
+					));
+					foreach ($newMacrosCreated as $macro) {
+						add_audit_ext(AUDIT_ACTION_ADD, AUDIT_RESOURCE_MACRO, $macro['globalmacroid'], $macro['macro'].SPACE.RARR.SPACE.$macro['value'], null, null, null);
+					}
 				}
-				
+
 				DBend(true);
 				show_messages(true, S_MACROS_UPDATED, S_CANNOT_UPDATE_MACROS);
 			}
-			catch(Exception $e){
+			catch (Exception $e) {
 				DBend(false);
 				error($e->getMessage());
 				show_messages(false, S_MACROS_UPDATED, S_CANNOT_UPDATE_MACROS);
 			}
 		}
-		
+
 	}
 ?>
 
@@ -577,7 +660,7 @@ include_once('include/page_header.php');
 
 	$cnf_wdgt = new CWidget();
 	$cnf_wdgt->addPageHeader(S_CONFIGURATION_OF_ZABBIX_BIG, $form);
-	
+
 
 	if(isset($_REQUEST['config'])){
 		$config = select_config(false);
@@ -679,20 +762,21 @@ include_once('include/page_header.php');
 
 			$tr = 0;
 			$row = new CRow();
-			$sql = 'SELECT imageid,imagetype,name '.
-					' FROM images'.
-					' WHERE '.DBin_node('imageid').
-						' AND imagetype='.$imagetype.
-					' ORDER BY name';
-			$result=DBselect($sql);
-			while($image = DBfetch($result)){
+
+			$options = array(
+				'filter'=> array('imagetype'=> $imagetype),
+				'output'=> API_OUTPUT_EXTEND,
+				'sortfield'=> 'name'
+			);
+			$images = CImage::get($options);
+			foreach($images as $inum => $image){
 				switch($image['imagetype']){
 					case IMAGE_TYPE_ICON:
-						$imagetype=S_ICON;
+						$imagetype = S_ICON;
 						$img = new CImg('imgstore.php?iconid='.$image['imageid'],'no image');
 					break;
 					case IMAGE_TYPE_BACKGROUND:
-						$imagetype=S_BACKGROUND;
+						$imagetype = S_BACKGROUND;
 						$img = new CImg('imgstore.php?iconid='.$image['imageid'],'no image',200);
 					break;
 					default: $imagetype=S_UNKNOWN;
@@ -853,7 +937,7 @@ include_once('include/page_header.php');
 				$valueamaps[$db_valuemap['valuemapid']] = $db_valuemap;
 				$valueamaps[$db_valuemap['valuemapid']]['maps'] = array();
 			}
-			
+
 			$db_maps = DBselect('SELECT valuemapid, value, newvalue FROM mappings WHERE '.DBin_node('mappingid'));
 			while($db_map = DBfetch($db_maps)){
 				$valueamaps[$db_map['valuemapid']]['maps'][] = array(
@@ -861,7 +945,7 @@ include_once('include/page_header.php');
 					'newvalue' => $db_map['newvalue']
 				);
 			}
-			
+
 
 			order_result($valueamaps, 'name');
 			foreach($valueamaps as $valuemap){
@@ -967,12 +1051,11 @@ include_once('include/page_header.php');
 			$left_tab->setAttribute('border',0);
 
 			$left_tab->addRow(create_hat(
-					S_REGULAR_EXPRESSION,
-					get_regexp_form(),//null,
-					null,
-					'hat_regexp'
-					//CProfile::get('web.config.hats.hat_regexp.state',1)
-				));
+				S_REGULAR_EXPRESSION,
+				get_regexp_form(),
+				null,
+				'hat_regexp'
+			));
 
 			$right_tab = new CTable();
 			$right_tab->setCellPadding(3);
@@ -981,23 +1064,20 @@ include_once('include/page_header.php');
 			$right_tab->setAttribute('border',0);
 
 			$right_tab->addRow(create_hat(
-					S_EXPRESSIONS,
-					get_expressions_tab(),//null,
-					null,
-					'hat_expressions'
-//					CProfile::get('web.config.hats.hat_expressions.state',1)
-				));
+				S_EXPRESSIONS,
+				get_expressions_tab(),
+				null,
+				'hat_expressions'
+			));
 
-			if(isset($_REQUEST['new_expression'])){
+			if (isset($_REQUEST['new_expression'])) {
 				$right_tab->addRow(create_hat(
-						S_NEW_EXPRESSION,
-						get_expression_form(),//null
-						null,
-						'hat_new_expression'
-//						CProfile::get('web.config.hats.hat_new_expression.state',1)
-					));
+					S_NEW_EXPRESSION,
+					get_expression_form(),
+					null,
+					'hat_new_expression'
+				));
 			}
-
 
 			$td_l = new CCol($left_tab);
 			$td_l->setAttribute('valign','top');
@@ -1066,20 +1146,28 @@ include_once('include/page_header.php');
 				new CCheckBox('all_regexps',NULL,"checkAll('".$form->GetName()."','all_regexps','regexpids');"),
 				S_NAME,
 				S_EXPRESSIONS
-				));
+			));
 
 			foreach($regexps as $regexpid => $regexp){
-
 				$table->addRow(array(
-					new CCheckBox('regexpids['.$regexp['regexpid'].']',NULL,NULL,$regexp['regexpid']),
-					new CLink($regexp['name'],'config.php?form=update'.url_param('config').'&regexpid='.$regexp['regexpid'].'#form'),
-					isset($expressions[$regexpid])?$expressions[$regexpid]:'-'
-					));
+					new CCheckBox('regexpids['.$regexp['regexpid'].']', NULL, NULL, $regexp['regexpid']),
+					new CLink($regexp['name'], 'config.php?form=update'.url_param('config').'&regexpid='.$regexp['regexpid'].'#form'),
+					isset($expressions[$regexpid]) ? $expressions[$regexpid] : '-'
+				));
 			}
 
-			$table->setFooter(new CCol(array(
-				new CButtonQMessage('delete',S_DELETE_SELECTED,S_DELETE_SELECTED_REGULAR_EXPRESSIONS_Q)
-			)));
+			$goBox = new CComboBox('go');
+
+			$goOption = new CComboItem('delete', S_DELETE_SELECTED);
+			$goOption->setAttribute('confirm', S_DELETE_SELECTED_REGULAR_EXPRESSIONS_Q);
+			$goBox->addItem($goOption);
+
+			$goButton = new CButton('goButton', S_GO);
+			$goButton->setAttribute('id', 'goButton');
+
+			zbx_add_post_js('chkbxRange.pageGoName = "regexpids";');
+
+			$table->setFooter(new CCol(array($goBox, $goButton)));
 
 			$form->addItem($table);
 
@@ -1090,7 +1178,7 @@ include_once('include/page_header.php');
 /////////////////////////////
 //  config = 11 // Macros  //
 /////////////////////////////
-	else if($_REQUEST['config']==11){	// Macros		
+	elseif ($_REQUEST['config'] == 11) {
 		$form = new CForm();
 		$tbl = new CTable();
 		$tbl->addRow(get_macros_widget());

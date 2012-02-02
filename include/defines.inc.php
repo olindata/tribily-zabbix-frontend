@@ -19,8 +19,8 @@
 **/
 ?>
 <?php
-	define('ZABBIX_VERSION','1.8.3');
-	define('ZABBIX_API_VERSION','1.3');
+	define('ZABBIX_VERSION',		'1.8.10');
+	define('ZABBIX_API_VERSION',	'1.3');
 /* USER DEFINES */
 
 	define('ZBX_LOGIN_ATTEMPTS',			5);
@@ -37,16 +37,23 @@
 
 	define('ZBX_FONTPATH',					realpath('fonts'));	// where to search for font (GD > 2.0.18)
 	define('ZBX_GRAPH_FONT_NAME',			'DejaVuSans');		// font file name
+	define('ZBX_GRAPH_LEGEND_HEIGHT',120); // when graph height is less then this value, some legend will not show up
 
-	define('ZBX_SCRIPT_TIMEOUT',			360); // in seconds
-	define('ZBX_SCRIPT_BYTES_LIMIT',		1073741824); // 1073741824 is 1MB in bytes
+	define('ZBX_SCRIPT_TIMEOUT',			60); // in seconds
+	define('ZBX_SCRIPT_BYTES_LIMIT',		1048576); // 1048576 is 1MB in bytes
 
 	define('GRAPH_YAXIS_SIDE_DEFAULT',		0); // 0 - LEFT SIDE, 1 - RIGHT SIDE
 
 	define('ZBX_MAX_IMAGE_SIZE',			1024*1024);
 
-/* END OF USERS DEFINES */
+	define('ZBX_UNITS_ROUNDOFF_THRESHOLD', 0.01);
+	define('ZBX_UNITS_ROUNDOFF_UPPER_LIMIT', 2);
+	define('ZBX_UNITS_ROUNDOFF_LOWER_LIMIT', 6);
 
+// for partitioned DB installs!!
+	define('ZBX_HISTORY_DATA_UPKEEP',		-1); // in days; -1: disabled, 0: always use trends
+
+/* END OF USERS DEFINES */
 	define('ZBX_MAP_HIGHLIGHT', 0x1);
 	define('ZBX_MAP_EXPANDPROBLEM', 0x2);
 	define('ZBX_MAP_MARKELEMENTS', 0x4);
@@ -83,6 +90,7 @@
 	define('PAGE_TYPE_HTML_BLOCK',		5);	// simple block of html (as text)
 	define('PAGE_TYPE_JSON',			6);	// simple JSON
 	define('PAGE_TYPE_JSON_RPC',		7);	// api call
+	define('PAGE_TYPE_TEXT_FILE',		8);	// api call
 
 
 	define('ZBX_SESSION_ACTIVE',		0);
@@ -169,6 +177,8 @@
 	define('AUDIT_RESOURCE_PROXY',			26);
 	define('AUDIT_RESOURCE_MAINTENANCE',	27);
 	define('AUDIT_RESOURCE_REGEXP',			28);
+	define('AUDIT_RESOURCE_MACRO',			29);
+	define('AUDIT_RESOURCE_TEMPLATE',		30);
 
 	define('CONDITION_TYPE_HOST_GROUP',			0);
 	define('CONDITION_TYPE_HOST',				1);
@@ -349,8 +359,18 @@
 	define('MEDIA_TYPE_EXEC',		1);
 	define('MEDIA_TYPE_SMS',		2);
 	define('MEDIA_TYPE_JABBER',		3);
+	define('MEDIA_TYPE_EZ_TEXTING',	100);
 
-	define('ACTION_DEFAULT_MSG', '{TRIGGER.NAME}: {STATUS}');
+	define('EZ_TEXTING_LIMIT_USA',		0);
+	define('EZ_TEXTING_LIMIT_CANADA',	1);
+
+	define('ACTION_DEFAULT_SUBJ_TRIGGER', '{TRIGGER.STATUS}: {TRIGGER.NAME}');
+	define('ACTION_DEFAULT_SUBJ_AUTOREG', 'Auto registration: {HOSTNAME}');
+	define('ACTION_DEFAULT_SUBJ_DISCOVERY', 'Discovery: {DISCOVERY.DEVICE.STATUS} {DISCOVERY.DEVICE.IPADDRESS}');
+
+	define('ACTION_DEFAULT_MSG_TRIGGER', "Trigger: {TRIGGER.NAME}\nTrigger status: {TRIGGER.STATUS}\nTrigger severity: {TRIGGER.SEVERITY}\nTrigger URL: {TRIGGER.URL}\n\nItem values:\n\n1. {ITEM.NAME1} ({HOSTNAME1}:{TRIGGER.KEY1}): {ITEM.VALUE1}\n2. {ITEM.NAME2} ({HOSTNAME2}:{TRIGGER.KEY2}): {ITEM.VALUE2}\n3. {ITEM.NAME3} ({HOSTNAME3}:{TRIGGER.KEY3}): {ITEM.VALUE3}");
+	define('ACTION_DEFAULT_MSG_AUTOREG', 'Host name: {HOSTNAME}');
+	define('ACTION_DEFAULT_MSG_DISCOVERY', "Discovery rule: {DISCOVERY.RULE.NAME}\n\nDevice IP: {DISCOVERY.DEVICE.IPADDRESS}\nDevice status: {DISCOVERY.DEVICE.STATUS}\nDevice uptime: {DISCOVERY.DEVICE.UPTIME}\n\nDevice service name: {DISCOVERY.SERVICE.NAME}\nDevice service port: {DISCOVERY.SERVICE.PORT}\nDevice service status: {DISCOVERY.SERVICE.STATUS}\nDevice service uptime: {DISCOVERY.SERVICE.UPTIME}");
 
 	define('ACTION_STATUS_ENABLED',		0);
 	define('ACTION_STATUS_DISABLED',	1);
@@ -500,6 +520,7 @@
 
 	define('HTTPTEST_AUTH_NONE',	0);
 	define('HTTPTEST_AUTH_BASIC',	1);
+	define('HTTPTEST_AUTH_NTLM',	2);
 
 	define('HTTPTEST_STATUS_ACTIVE',	0);
 	define('HTTPTEST_STATUS_DISABLED',	1);
@@ -623,15 +644,18 @@ if(in_array(ini_get('mbstring.func_overload'), array(2,3,6,7))){
 	define('REGEXP_EXCLUDE',1);
 
 // PREG
-	define('ZBX_PREG_PRINT', '^\x00-\x1F');
+	define('ZBX_PREG_PRINT', '^\x{00}-\x{1F}');
 
 	define('ZBX_PREG_SPACES', '(\s+){0,1}');
 	define('ZBX_PREG_MACRO_NAME', '([A-Z0-9\._]+)');
 	define('ZBX_PREG_INTERNAL_NAMES', '([0-9a-zA-Z_\. \-]+)');	/* !!! Don't forget sync code with C !!! */
-	define('ZBX_PREG_KEY_NAME', '([0-9a-zA-Z_\.\-]+)');	/* !!! Don't forget sync code with C !!! */
+
+	// use isKeyChar() function if you need to check only one symbol
+	define('ZBX_PREG_KEY_NAME', '([0-9a-zA-Z_,.-]+)');	/* !!! Don't forget sync code with C !!! */
+
 	define('ZBX_PREG_PARAMS', '(['.ZBX_PREG_PRINT.']+?){0,1}');
 	define('ZBX_PREG_SIGN', '([&|><=+*\/#\-])');
-	define('ZBX_PREG_NUMBER', '([\-+]{0,1}[0-9]+[.]{0,1}[0-9]*[KMGTsmhdw]{0,1})');
+	define('ZBX_PREG_NUMBER', '([\-+]{0,1}[0-9]+[.]{0,1}[0-9]*[YZEPKMGTsmhdw]{0,1})');
 
 	define('ZBX_PREG_DEF_FONT_STRING', '/^[0-9\.:% ]+$/');
 //--
@@ -646,7 +670,7 @@ if(in_array(ini_get('mbstring.func_overload'), array(2,3,6,7))){
 	// define('ZBX_PREG_ITEM_KEY_FORMAT', '('.ZBX_PREG_KEY_NAME.'(\['.ZBX_PREG_PARAMS.'\]){0,1})');
 
 
-	define('ZBX_PREG_FUNCTION_FORMAT', '('.ZBX_PREG_INTERNAL_NAMES.'(\('.ZBX_PREG_PARAMS.'\)))');
+	define('ZBX_PREG_FUNCTION_FORMAT', '([a-z]+(\('.ZBX_PREG_PARAMS.'\)))');
 
 	define('ZBX_PREG_SIMPLE_EXPRESSION_FORMAT','(\{'.ZBX_PREG_HOST_FORMAT.'\:'.ZBX_PREG_ITEM_KEY_FORMAT.'\.'.ZBX_PREG_FUNCTION_FORMAT.'\})');
 //	define('ZBX_PREG_MACRO_NAME_FORMAT', '(\{[A-Z\.]+\})');
@@ -739,12 +763,12 @@ if(in_array(ini_get('mbstring.func_overload'), array(2,3,6,7))){
 	define('ZBX_DEFAULT_IMPORT_HOST_GROUP', 'Imported hosts');
 
 // API errors //
-	define('ZBX_API_ERROR_NO_HOST', 1);
 	define('ZBX_API_ERROR_INTERNAL', 111);
 	define('ZBX_API_ERROR_PARAMETERS', 100);
 	define('ZBX_API_ERROR_PERMISSIONS', 120);
 	define('ZBX_API_ERROR_NO_AUTH', 200);
 	define('ZBX_API_ERROR_NO_METHOD', 300);
+
 	//define('ZBX_API_ERROR_PARAMETERS', 100);
 
 	define('API_OUTPUT_SHORTEN', 'shorten');
@@ -777,6 +801,6 @@ if(in_array(ini_get('mbstring.func_overload'), array(2,3,6,7))){
 // BC Math scale
 	bcscale(7);
 
-// Numeric Locale to default
-	setLocale(LC_NUMERIC, array('en','en_US','en_US.UTF-8','English_United States.1252'));
+	// numeric locale to default
+	setlocale(LC_NUMERIC, array('C', 'POSIX', 'en', 'en_US', 'en_US.UTF-8', 'English_United States.1252', 'en_GB', 'en_GB.UTF-8'));
 ?>

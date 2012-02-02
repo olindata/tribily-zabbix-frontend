@@ -113,7 +113,7 @@ include_once('include/page_header.php');
 			'name' => $_REQUEST['mname'],
 			'maintenance_type' => $_REQUEST['maintenance_type'],
 			'description'=>	$_REQUEST['description'],
-			'active_since'=> zbxDateToTime(get_request('active_since', date('YmdHis'))),
+			'active_since'=> zbxDateToTime(get_request('active_since', date('YmdHi'))),
 			'active_till' => zbxDateToTime(get_request('active_till', 0)),
 			'timeperiods' => get_request('timeperiods', array()),
 			'hostids' => get_request('hostids', array()),
@@ -177,11 +177,10 @@ include_once('include/page_header.php');
 		$new_timeperiod['start_date'] = zbxDateToTime($new_timeperiod['start_date']);
 
 // START TIME
-		$new_timeperiod['start_time'] = ($new_timeperiod['hour'] * 3600) + ($new_timeperiod['minute'] * 60);
+		$new_timeperiod['start_time'] = $new_timeperiod['hour'] * SEC_PER_HOUR + $new_timeperiod['minute'] * SEC_PER_MIN;
 
 // PERIOD
-		$new_timeperiod['period'] = ($new_timeperiod['period_days'] * 86400) + ($new_timeperiod['period_hours'] * 3600) +
-				($new_timeperiod['period_minutes'] * 60);
+		$new_timeperiod['period'] = $new_timeperiod['period_days'] * SEC_PER_DAY + $new_timeperiod['period_hours'] * SEC_PER_HOUR + $new_timeperiod['period_minutes'] * SEC_PER_MIN;
 
 // DAYSOFWEEK
 		if(!isset($new_timeperiod['dayofweek'])){
@@ -302,7 +301,7 @@ include_once('include/page_header.php');
 		if(isset($_REQUEST['timeperiods'][$edit_timeperiodid])){
 			$_REQUEST['new_timeperiod'] = $_REQUEST['timeperiods'][$edit_timeperiodid];
 			$_REQUEST['new_timeperiod']['id'] = $edit_timeperiodid;
-			$_REQUEST['new_timeperiod']['start_date'] = date('YmdHis', $_REQUEST['timeperiods'][$edit_timeperiodid]['start_date']);
+			$_REQUEST['new_timeperiod']['start_date'] = date('YmdHi', $_REQUEST['timeperiods'][$edit_timeperiodid]['start_date']);
 		}
 	}
 
@@ -365,8 +364,8 @@ include_once('include/page_header.php');
 		else{
 			$mname				= get_request('mname', '');
 			$maintenance_type	= get_request('maintenance_type', 0);
-			$active_since		= zbxDateToTime(get_request('active_since', date('YmdHis')));
-			$active_till		= zbxDateToTime(get_request('active_till', date('YmdHis', time()+86400)));
+			$active_since		= zbxDateToTime(get_request('active_since', date('YmdHi')));
+			$active_till		= zbxDateToTime(get_request('active_till', date('YmdHi', time() + SEC_PER_DAY)));
 			$description		= get_request('description', '');
 		}
 		$tblMntc = new CTable(null, 'formElementTable');
@@ -378,8 +377,8 @@ include_once('include/page_header.php');
 		$cmbType->addItem(MAINTENANCE_TYPE_NODATA, S_NO_DATA_COLLECTION);
 		$tblMntc->addRow(array(S_MAINTENANCE_TYPE, $cmbType));
 
-		$tblMntc->addItem(new Cvar('active_since', date('YmdHis', $active_since)));
-		$tblMntc->addItem(new Cvar('active_till', date('YmdHis', $active_till)));
+		$tblMntc->addItem(new Cvar('active_since', date('YmdHi', $active_since)));
+		$tblMntc->addItem(new Cvar('active_till', date('YmdHi', $active_till)));
 
 		$clndr_icon = new CImg('images/general/bar/cal.gif','calendar', 16, 12, 'pointer');
 
@@ -498,18 +497,18 @@ include_once('include/page_header.php');
 
 // MAINTENANCE HOSTS {{{
 		$options = array(
-			'editable' => 1,
+			'editable' => true,
 			'output' => API_OUTPUT_EXTEND,
-			'real_hosts' => 1,
+			'real_hosts' => true,
+			'preservekeys' => true
 		);
 		$all_groups = CHostGroup::get($options);
-		$all_groups = zbx_toHash($all_groups, 'groupid');
 		order_result($all_groups, 'name');
-
 
 		$twb_groupid = get_request('twb_groupid', 0);
 		if(!isset($all_groups[$twb_groupid])){
-			$twb_groupid = key($all_groups);
+			$twb_group = reset($all_groups);
+			$twb_groupid = $twb_group['groupid'];
 		}
 
 		$cmbGroups = new CComboBox('twb_groupid', $twb_groupid, 'submit()');
@@ -670,7 +669,7 @@ include_once('include/page_header.php');
 					$mnt_status = new CSpan(S_EXPIRED,'red');
 					break;
 				case MAINTENANCE_STATUS_APPROACH:
-					$mnt_status = new CSpan(S_APPROACH,'blue');
+					$mnt_status = new CSpan(S_APPROACHING,'blue');
 					break;
 				case MAINTENANCE_STATUS_ACTIVE:
 					$mnt_status = new CSpan(S_ACTIVE,'green');

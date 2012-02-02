@@ -768,7 +768,7 @@ function make_hoststat_summary($filter){
 
 // Author: Aly
 function make_status_of_zbx(){
-	global $USER_DETAILS;
+	global $USER_DETAILS, $ZBX_SERVER, $ZBX_SERVER_PORT;
 
 	$table = new CTableInfo();
 	$table->setHeader(array(
@@ -778,11 +778,13 @@ function make_status_of_zbx(){
 	));
 
 	show_messages(); //because in function get_status(); function clear_messages() is called when fsockopen() fails.
-	$status=get_status();
+	$status = get_status();
 
-	$table->addRow(array(S_ZABBIX_SERVER_IS_RUNNING,
-	new CSpan($status['zabbix_server'], ($status['zabbix_server'] == S_YES ? 'off' : 'on')),' - '));
-	//	$table->addRow(array(S_VALUES_STORED,$status['history_count']));$table->addRow(array(S_TRENDS_STORED,$status['trends_count']));
+	$table->addRow(array(
+		S_ZABBIX_SERVER_IS_RUNNING,
+		new CSpan($status['zabbix_server'], ($status['zabbix_server'] == S_YES ? 'off' : 'on')),
+		isset($ZBX_SERVER, $ZBX_SERVER_PORT) ? $ZBX_SERVER.':'.$ZBX_SERVER_PORT : S_ZABBIX_SERVER_IP_OR_PORT_IS_NOT_SET
+	));
 	$title = new CSpan(S_NUMBER_OF_HOSTS);
 	$title->setAttribute('title', 'asdad');
 	$table->addRow(array(S_NUMBER_OF_HOSTS ,$status['hosts_count'],
@@ -846,6 +848,8 @@ return $table;
 
 // author Aly
 function make_latest_issues($filter = array()){
+	global $page;
+
 	$config = select_config();
 
 	$limit = isset($filter['limit']) ? $filter['limit'] : 20;
@@ -989,15 +993,14 @@ function make_latest_issues($filter = array()){
 					$ack_info = make_acktab_by_eventid($row_event['eventid']);
 					$ack_info->setAttribute('style','width: auto;');
 
-					$ack=new CLink(S_YES,'acknow.php?eventid='.$row_event['eventid'],'off');
+					$ack=new CLink(S_YES,'acknow.php?eventid='.$row_event['eventid'].'&backurl='.$page['file'],'off');
 					$ack->setHint($ack_info, '', '', false);
 				}
 				else{
-					$ack= new CLink(S_NO,'acknow.php?eventid='.$row_event['eventid'],'on');
+					$ack= new CLink(S_NO,'acknow.php?eventid='.$row_event['eventid'].'&backurl='.$page['file'],'on');
 				}
 			}
 
-//			$description = expand_trigger_description($row['triggerid']);
 			$description = expand_trigger_description_by_data(zbx_array_merge($trigger, array('clock'=>$row_event['clock'])),ZBX_FLAG_EVENT);
 
 //actions
@@ -1009,7 +1012,7 @@ function make_latest_issues($filter = array()){
 					);
 
 			if($trigger['url'])
-				$description = new CLink($description, $trigger['url'], null, null, true);
+				$description = new CLink($description, resolveTriggerUrl($trigger), null, null, true);
 			else
 				$description = new CSpan($description,'pointer');
 
@@ -1172,7 +1175,7 @@ function make_graph_menu(&$menu,&$submenu){
 				"PopUp('popup.php?srctbl=graphs".
 					'&srcfld1=graphid'.
 					'&reference=graphid'.
-					'&real_hosts=1'.
+					'&monitored_hosts=1'.
 					"&multiselect=1',800,450);".
 				"void(0);",
 				null,
@@ -1183,8 +1186,8 @@ function make_graph_menu(&$menu,&$submenu){
 				'javascript: '.
 				"PopUp('popup.php?srctbl=simple_graph".
 					'&srcfld1=itemid'.
-					'&real_hosts=1'.
 					'&reference=itemid'.
+					'&monitored_hosts=1'.
 					"&multiselect=1',800,450);".
 				"void(0);",
 				null,
@@ -1246,7 +1249,7 @@ function make_graph_submenu(){
 			$item['description'] = item_description($item);
 
 			$favGraphs[] = array(
-							'name'	=>	$host['host'].':'.$item['description'],
+							'name'	=>	htmlspecialchars($host['host'].':'.$item['description']),
 							'favobj'=>	'itemid',
 							'favid'	=>	$sourceid,
 							'action'=>	'remove'
@@ -1260,7 +1263,7 @@ function make_graph_submenu(){
 			$ghost = reset($graph['hosts']);
 
 			$favGraphs[] = array(
-							'name'	=>	$ghost['host'].':'.$graph['name'],
+							'name'	=>	htmlspecialchars($ghost['host'].':'.$graph['name']),
 							'favobj'=>	'graphid',
 							'favid'	=>	$sourceid,
 							'action'=>	'remove'
@@ -1324,7 +1327,7 @@ function make_sysmap_submenu(){
 
 	foreach($sysmaps as $snum => $sysmap){
 		$favMaps[] = array(
-				'name'	=>	$sysmap['name'],
+				'name'	=>	htmlspecialchars($sysmap['name']),
 				'favobj'=>	'sysmapid',
 				'favid'	=>	$sysmap['sysmapid'],
 				'action'=>	'remove'
@@ -1397,11 +1400,11 @@ function make_screen_submenu(){
 		if('slideshowid' == $source){
 			if(!slideshow_accessible($sourceid, PERM_READ_ONLY)) continue;
 			if(!$slide = get_slideshow_by_slideshowid($sourceid)) continue;
-			
+
 			$slide_added = true;
 
 			$favScreens[] = array(
-				'name'	=>	$slide['name'],
+				'name'	=>	htmlspecialchars($slide['name']),
 				'favobj'=>	'slideshowid',
 				'favid'	=>	$slide['slideshowid'],
 				'action'=>	'remove'
@@ -1415,7 +1418,7 @@ function make_screen_submenu(){
 			$screen_added = true;
 
 			$favScreens[] = array(
-				'name'	=>	$screen['name'],
+				'name'	=>	htmlspecialchars($screen['name']),
 				'favobj'=>	'screenid',
 				'favid'	=>	$screen['screenid'],
 				'action'=>	'remove'

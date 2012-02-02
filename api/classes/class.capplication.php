@@ -62,11 +62,13 @@ class CApplication extends CZBXAPI{
 			'where' => array(),
 			'group' => array(),
 			'order' => array(),
-			'limit' => null);
+			'limit' => null
+		);
 
 		$def_options = array(
 			'nodeids'				=> null,
 			'groupids'				=> null,
+			'templateids'			=> null,
 			'hostids'				=> null,
 			'itemids'				=> null,
 			'applicationids'		=> null,
@@ -74,9 +76,13 @@ class CApplication extends CZBXAPI{
 			'editable'				=> null,
 			'inherited' 			=> null,
 			'nopermissions'			=> null,
-// Filter
+
+// filter
 			'filter'				=> null,
-			'pattern'				=> '',
+			'search'				=> null,
+			'startSearch'			=> null,
+			'exludeSearch'			=> null,
+			'searchWildcardsEnabled'=> null,
 
 // OutPut
 			'output'				=> API_OUTPUT_REFER,
@@ -144,6 +150,19 @@ class CApplication extends CZBXAPI{
 
 			if(!is_null($options['groupCount'])){
 				$sql_parts['group']['hg'] = 'hg.groupid';
+			}
+		}
+
+// templateids
+		if(!is_null($options['templateids'])){
+			zbx_value2array($options['templateids']);
+
+			if(!is_null($options['hostids'])){
+				zbx_value2array($options['hostids']);
+				$options['hostids'] = array_merge($options['hostids'], $options['templateids']);
+			}
+			else{
+				$options['hostids'] = $options['templateids'];
 			}
 		}
 
@@ -232,20 +251,14 @@ class CApplication extends CZBXAPI{
 			}
 		}
 
-// pattern
-		if(!zbx_empty($options['pattern'])){
-			$sql_parts['where']['name'] = ' UPPER(a.name) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
+// search
+		if(is_array($options['search'])){
+			zbx_db_search('applications a', $options, $sql_parts);
 		}
 
 // filter
-		if(!is_null($options['filter'])){
-			zbx_value2array($options['filter']);
-
-			if(isset($options['filter']['name']))
-				$sql_parts['where']['name'] = 'a.name='.zbx_dbstr($options['filter']['name']);
-
-			if(isset($options['filter']['hostid']))
-				$sql_parts['where']['hostid'] = 'a.hostid='.$options['filter']['hostid'];
+		if(is_array($options['filter'])){
+			zbx_db_filter('applications a', $options, $sql_parts);
 		}
 
 // order
@@ -429,11 +442,22 @@ COpt::memoryPick();
 		try{
 			self::BeginTransaction(__METHOD__);
 
+			$dbHosts = CHost::get(array(
+				'output' => API_OUTPUT_SHORTEN,
+				'hostids' => zbx_objectValues($applications, 'hostid'),
+				'templated_hosts' => true,
+				'editable' => true,
+				'preservekeys' => true
+			));
+
 			foreach($applications as $anum => $application){
+				if(!isset($dbHosts[$application['hostid']]))
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_NO_PERMISSIONS);
+
 				$result = add_application($application['name'], $application['hostid']);
 
 				if(!$result)
-					self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot create application');
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_CANNOT_CREATE_APPLICATION);
 				$applicationids[] = $result;
 			}
 
@@ -468,7 +492,7 @@ COpt::memoryPick();
 			$options = array(
 				'applicationids' => $applicationids,
 				'editable' => 1,
-				'extendoutput' => 1,
+				'output' => API_OUTPUT_EXTEND,
 				'preservekeys' => 1
 			);
 			$upd_applications = self::get($options);
@@ -480,14 +504,16 @@ COpt::memoryPick();
 
 			foreach($applications as $anum => $application){
 				$application_db_fields = $upd_applications[$application['applicationid']];
+				$host = reset($application_db_fields['hosts']);
 
 				if(!check_db_fields($application_db_fields, $application)){
-					self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect fields for application');
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_INCORRECT_FIELDS_FOR_APPLICATIONS);
 				}
 
-				$result = update_application($application['applicationid'], $application['name'], $application['hostid']);
+				$result = update_application($application['applicationid'], $application['name'], $host['hostid']);
+
 				if(!$result)
-					self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot update application');
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_CANNOT_UPDATE_APPLICATION);
 			}
 
 			self::EndTransaction(true, __METHOD__);
@@ -510,29 +536,31 @@ COpt::memoryPick();
  * @param array $applications[0,...]['applicationid']
  * @return boolean
  */
-	public static function delete($applications){
-		$applications = zbx_toArray($applications);
-		$applicationids = zbx_objectValues($applications, 'applicationid');
-
+	public static function delete($applicationids){
+		$applicationids = zbx_toArray($applicationids);
 		try{
 			self::BeginTransaction(__METHOD__);
 
 			$options = array(
 				'applicationids' => $applicationids,
 				'editable' => 1,
-				'output' => API_OUTPUT_SHORTEN,
+				'output' => API_OUTPUT_EXTEND,
 				'preservekeys' => 1
 			);
 			$del_applications = self::get($options);
-			foreach($applications as $anum => $application){
-				if(!isset($del_applications[$application['applicationid']])){
+
+			foreach($applicationids as $applicationid){
+				if(!isset($del_applications[$applicationid])){
 					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSIONS);
+				}
+				if($del_applications[$applicationid]['templateid'] != 0){
+					self::exception(ZBX_API_ERROR_PERMISSIONS, 'Cannot delete templated application');
 				}
 			}
 
 			$result = delete_application($applicationids);
 			if(!$result)
-				self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot delete application');
+				self::exception(ZBX_API_ERROR_PARAMETERS, S_CANNOT_DELETE_APPLICATION);
 
 			self::EndTransaction(true, __METHOD__);
 			return array('applicationids' => $applicationids);
@@ -554,7 +582,7 @@ COpt::memoryPick();
  * @param array $data['items']
  * @return boolean
  */
-	public static function addItems($data){
+	public static function massAdd($data){
 		if(empty($data['applications'])) return true;
 
 		$applications = zbx_toArray($data['applications']);
@@ -569,11 +597,11 @@ COpt::memoryPick();
 			$app_options = array(
 				'applicationids' => $applicationids,
 				'editable' => 1,
-				'extendoutput' => 1,
+				'output' => API_OUTPUT_EXTEND,
 				'preservekeys' => 1,
 			);
 			$allowed_applications = self::get($app_options);
-			foreach($applications as $num => $application){
+			foreach($applications as $anum => $application){
 				if(!isset($allowed_applications[$application['applicationid']])){
 					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSIONS);
 				}
@@ -582,7 +610,7 @@ COpt::memoryPick();
 			$item_options = array(
 				'itemids' => $itemids,
 				'editable' => 1,
-				'extendoutput' => 1,
+				'output' => API_OUTPUT_EXTEND,
 				'preservekeys' => 1
 			);
 			$allowed_items = CItem::get($item_options);
@@ -596,7 +624,7 @@ COpt::memoryPick();
 			$sql = 'SELECT itemid, applicationid ' .
 					' FROM items_applications ' .
 					' WHERE ' . DBcondition('itemid', $itemids) .
-					' AND ' . DBcondition('applicationid', $applicationids);
+						' AND ' . DBcondition('applicationid', $applicationids);
 			$linked_db = DBselect($sql);
 			while($pair = DBfetch($linked_db)){
 				$linked[$pair['applicationid']] = array($pair['itemid'] => $pair['itemid']);
@@ -616,22 +644,24 @@ COpt::memoryPick();
 
 			DB::insert('items_applications', $apps_insert);
 
-
-			$child_applications = array();
-			foreach($itemids as $itemid){
+			foreach($itemids as $inum => $itemid){
 				$db_childs = DBselect('SELECT itemid, hostid FROM items WHERE templateid=' . $itemid);
 
-				if($child = DBfetch($db_childs)){
+				while($child = DBfetch($db_childs)){
 					$sql = 'SELECT a1.applicationid ' .
 							' FROM applications a1, applications a2 ' .
 							' WHERE a1.name=a2.name ' .
-							' AND a1.hostid=' . $child['hostid'] .
-							' AND ' . DBcondition('a2.applicationid', $applicationids);
+								' AND a1.hostid=' . $child['hostid'] .
+								' AND ' . DBcondition('a2.applicationid', $applicationids);
 					$db_apps = DBselect($sql);
+
+					$child_applications = array();
+
 					while($app = DBfetch($db_apps)){
 						$child_applications[] = $app;
 					}
-					$result = self::addItems(array('items' => $child, 'applications' => $child_applications));
+
+					$result = self::massAdd(array('items' => $child, 'applications' => $child_applications));
 					if(!$result){
 						self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot add items');
 					}

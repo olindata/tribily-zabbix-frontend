@@ -26,7 +26,7 @@ require_once('include/forms.inc.php');
 $page['title'] = 'S_CONFIGURATION_OF_NETWORK_MAPS';
 $page['file'] = 'sysmap.php';
 $page['hist_arg'] = array('sysmapid');
-$page['scripts'] = array('effects.js', 'dragdrop.js','class.cmap.js');
+$page['scripts'] = array('class.cmap.js');
 $page['type'] = detect_page_type();
 
 include_once('include/page_header.php');
@@ -96,7 +96,7 @@ include_once('include/page_header.php');
 
 					$options = array(
 						'sysmapids'=> $sysmapid,
-						'editable' => 1,
+						'editable' => true,
 						'output' => API_OUTPUT_EXTEND,
 						'select_selements' => API_OUTPUT_EXTEND,
 						'select_links' => API_OUTPUT_EXTEND
@@ -127,7 +127,7 @@ include_once('include/page_header.php');
 						foreach($link['linktriggers'] as $lnum => $linktrigger){
 							$hosts = get_hosts_by_triggerid($linktrigger['triggerid']);
 							if($host = DBfetch($hosts)){
-								$description = $host['host'].':'.expand_trigger_description($linktrigger['triggerid']);
+								$description = $host['host'].':'.expand_trigger_description_simple($linktrigger['triggerid']);
 							}
 
 							$link['linktriggers'][$lnum]['desc_exp'] = $description;
@@ -208,12 +208,11 @@ include_once('include/page_header.php');
 						}
 
 						foreach($links as $id => $link){
+							$link['sysmapid'] = $sysmapid;
 							if(isset($link['new'])){
-								$link['sysmapid'] = $sysmapid;
 								$result = add_link($link);
 							}
 							else{
-								$link['sysmapid'] = $sysmapid;
 								$result = update_link($link);
 								unset($db_linkids[$link['linkid']]);
 							}
@@ -259,7 +258,7 @@ include_once('include/page_header.php');
 
 //					$selement['image'] = get_base64_icon($element);
 					$selement['image'] = get_selement_iconid($selement);
-					$selement['label_expanded'] = expand_map_element_label_by_data($selement);
+					$selement['label_expanded'] = resolveMapLabelMacrosAll($selement);
 
 					$action = '';
 					$action.= 'ZBX_SYSMAPS['.$cmapid.'].map.add_selement('.zbx_jsvalue($selement).',1);';

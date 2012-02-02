@@ -66,39 +66,34 @@
 		}
 	}
 
-/*
- * Function: item_type2str
- *
- * Description:
- *     Represent integer value of item type as string
- *
- * Author:
- *     Eugene Grigorjev (eugene.grigorjev@zabbix.com)
- *
- * Comments:
- *
- */
-	function item_type2str($type){
-		switch($type){
-			case ITEM_TYPE_ZABBIX:		$type = S_ZABBIX_AGENT;			break;
-			case ITEM_TYPE_SNMPV1:		$type = S_SNMPV1_AGENT;			break;
-			case ITEM_TYPE_TRAPPER:		$type = S_ZABBIX_TRAPPER;		break;
-			case ITEM_TYPE_SIMPLE:		$type = S_SIMPLE_CHECK;			break;
-			case ITEM_TYPE_SNMPV2C:		$type = S_SNMPV2_AGENT;			break;
-			case ITEM_TYPE_INTERNAL:	$type = S_ZABBIX_INTERNAL;		break;
-			case ITEM_TYPE_SNMPV3:		$type = S_SNMPV3_AGENT;			break;
-			case ITEM_TYPE_ZABBIX_ACTIVE:	$type = S_ZABBIX_AGENT_ACTIVE;		break;
-			case ITEM_TYPE_AGGREGATE:	$type = S_ZABBIX_AGGREGATE;		break;
-			case ITEM_TYPE_HTTPTEST:	$type = S_WEB_MONITORING;		break;
-			case ITEM_TYPE_EXTERNAL:	$type = S_EXTERNAL_CHECK;		break;
-			case ITEM_TYPE_DB_MONITOR:	$type = S_ZABBIX_DATABASE_MONITOR;	break;
-			case ITEM_TYPE_IPMI:		$type = S_IPMI_AGENT;			break;
-			case ITEM_TYPE_SSH:		$type = S_SSH_AGENT;			break;
-			case ITEM_TYPE_TELNET:		$type = S_TELNET_AGENT;			break;
-			case ITEM_TYPE_CALCULATED:	$type = S_CALCULATED;			break;
-			default:$type = S_UNKNOWN;			break;
+	function item_type2str($type=null){
+		$types = array(
+			ITEM_TYPE_ZABBIX => S_ZABBIX_AGENT,
+			ITEM_TYPE_ZABBIX_ACTIVE => S_ZABBIX_AGENT_ACTIVE,
+			ITEM_TYPE_SIMPLE => S_SIMPLE_CHECK,
+			ITEM_TYPE_SNMPV1 => S_SNMPV1_AGENT,
+			ITEM_TYPE_SNMPV2C => S_SNMPV2_AGENT,
+			ITEM_TYPE_SNMPV3 => S_SNMPV3_AGENT,
+			ITEM_TYPE_INTERNAL => S_ZABBIX_INTERNAL,
+			ITEM_TYPE_TRAPPER => S_ZABBIX_TRAPPER,
+			ITEM_TYPE_AGGREGATE => S_ZABBIX_AGGREGATE,
+			ITEM_TYPE_EXTERNAL => S_EXTERNAL_CHECK,
+			ITEM_TYPE_DB_MONITOR => S_ZABBIX_DATABASE_MONITOR,
+			ITEM_TYPE_IPMI => S_IPMI_AGENT,
+			ITEM_TYPE_SSH => S_SSH_AGENT,
+			ITEM_TYPE_TELNET => S_TELNET_AGENT,
+			ITEM_TYPE_CALCULATED => S_CALCULATED,
+			ITEM_TYPE_HTTPTEST => S_WEB_MONITORING,
+		);
+
+		if(is_null($type)){
+//			natsort($types);
+			return $types;
 		}
-	return $type;
+		else if(isset($types[$type]))
+			return $types[$type];
+		else
+			return S_UNKNOWN;
 	}
 
 	/*
@@ -159,7 +154,7 @@
 	 * Comments:
 	 *
 	 */
-	function	item_status2str($status){
+	function item_status2str($status){
 		switch($status){
 			case ITEM_STATUS_ACTIVE:	$status = S_ACTIVE;		break;
 			case ITEM_STATUS_DISABLED:	$status = S_DISABLED;		break;
@@ -195,8 +190,6 @@
 	# Update Item definition for selected group
 
 	function update_item_in_group($groupid,$itemid,$item){
-/*		$description,$key,$hostid,$delay,$history,$status,$type,$snmp_community,$snmp_oid,$value_type,$trapper_hosts,$snmp_port,$units,$multiplier,$delta,$snmpv3_securityname,$snmpv3_securitylevel,$snmpv3_authpassphrase,$snmpv3_privpassphrase,$formula,$trends,$logtimefmt,$valuemapid,$delay_flex,$params,$ipmi_sensor,$applications)
-//*/
 		$sql='SELECT i.itemid,i.hostid '.
 				' FROM hosts_groups hg,items i '.
 				' WHERE hg.groupid='.$groupid.
@@ -240,8 +233,6 @@
 	# Add Item definition to selected group
 
 	function add_item_to_group($groupid,$item){
-/*	$description,$key,$hostid,$delay,$history,$status,$type,$snmp_community,$snmp_oid,$value_type,$trapper_hosts,$snmp_port,$units,$multiplier,$delta,$snmpv3_securityname,$snmpv3_securitylevel,$snmpv3_authpassphrase,$snmpv3_privpassphrase,$formula,$trends,$logtimefmt,$valuemapid,$delay_flex,$params,$ipmi_sensor,$applications)
-//*/
 		$sql='SELECT hostid FROM hosts_groups WHERE groupid='.$groupid;
 		$result=DBSelect($sql);
 		while($row=DBfetch($result)){
@@ -251,19 +242,72 @@
 	return true;
 	}
 
+	// function is used to validate item before puting it to a database
+	function itemIsValid($key, $type, $value_type, $delay, $delay_flex, $snmp_port) {
+		if (($type == ITEM_TYPE_DB_MONITOR && $key == 'db.odbc.select[<unique short description>]') ||
+				($type == ITEM_TYPE_SSH && $key == 'ssh.run[<unique short description>,<ip>,<port>,<encoding>]') ||
+				($type == ITEM_TYPE_TELNET && $key == 'telnet.run[<unique short description>,<ip>,<port>,<encoding>]')) {
+			error(S_ITEMS_CHECK_KEY_DEFAULT_EXAMPLE_PASSED);
+			return false;
+		}
+
+		if ($type != ITEM_TYPE_ZABBIX_ACTIVE && $type != ITEM_TYPE_TRAPPER) {
+			$res = calculate_item_nextcheck(0, $type, $delay, $delay_flex, time());
+			if (SEC_PER_YEAR == $res['delay'])	{
+				error(S_ITEM_WILL_NOT_BE_REFRESHED_PLEASE_ENTER_A_CORRECT_UPDATE_INTERVAL);
+				return false;
+			}
+		}
+
+		if (in_array($type, array(ITEM_TYPE_SNMPV1, ITEM_TYPE_SNMPV2C, ITEM_TYPE_SNMPV3)) && ($snmp_port < 1 || $snmp_port > 65535)) {
+			error(S_INVALID_SNMP_PORT);
+			return false;
+		}
+
+		$itemKey = new CItemKey($key);
+		if (!$itemKey->isValid()) {
+			error(S_ERROR_IN_ITEM_KEY.SPACE.$itemKey->getError());
+			return false;
+		}
+
+		if ($type == ITEM_TYPE_AGGREGATE) {
+			if (!str_in_array($itemKey->getKeyId(), array('grpmax', 'grpmin', 'grpsum', 'grpavg'))) {
+				error(S_GROUP_FUNCTION.SPACE.'['.$itemKey->getKeyId().']'.SPACE.S_IS_NOT_ONE_OF.SPACE.'[grpmax, grpmin, grpsum, grpavg]');
+				return false;
+			}
+
+			$params = $itemKey->getParameters();
+
+			if (count($params) != 4) {
+				error(S_KEY_DOES_NOT_MATCH.SPACE.'groupfunc["Host group", "Item key", "item func", "parameter"]');
+				return false;
+			}
+
+			if (!str_in_array($params[2], array('last', 'min', 'max', 'avg', 'sum', 'count'))) {
+				error(S_ITEM_FUNCTION.SPACE.'['.$params[2].']'.SPACE.S_IS_NOT_ONE_OF.SPACE.'[last, min, max, avg, sum, count]');
+				return false;
+			}
+
+			if ($value_type != ITEM_VALUE_TYPE_FLOAT) {
+				error(S_VALUE_TYPE_MUST_FLOAT_FOR_AGGREGATE_ITEMS);
+				return false;
+			}
+		}
+
+		if (str_in_array($itemKey->getKeyId(), array('log', 'logrt', 'eventlog')) && $value_type != ITEM_VALUE_TYPE_LOG) {
+			error(S_TYPE_INFORMATION_BUST_LOG_FOR_LOG_KEY);
+			return false;
+		}
+
+		return true;
+	}
+
 	/******************************************************************************
 	 *                                                                            *
 	 * Comments: !!! Don't forget sync code with C !!!                            *
 	 *                                                                            *
 	 ******************************************************************************/
-	function add_item($item){
-/*
-		$item = array('description','key','hostid','delay','history','status','type',
-		'snmp_community','snmp_oid','value_type','trapper_hosts','snmp_port','units','multiplier','delta',
-		'snmpv3_securityname','snmpv3_securitylevel','snmpv3_authpassphrase','snmpv3_privpassphrase',
-		'formula','trends','logtimefmt','valuemapid','delay_flex','params','ipmi_sensor','applications','templateid');
-//*/
-
+	function add_item($item) {
 		$item_db_fields = array(
 				'description'		=> null,
 				'key_'			=> null,
@@ -276,7 +320,7 @@
 				'snmp_oid'		=> '',
 				'value_type'		=> ITEM_VALUE_TYPE_STR,
 				'data_type'		=> ITEM_DATA_TYPE_DECIMAL,
-				'trapper_hosts'		=> 'localhost',
+				'trapper_hosts'		=> '',
 				'snmp_port'		=> 161,
 				'units'			=> '',
 				'multiplier'		=> 0,
@@ -300,85 +344,29 @@
 				'applications'		=> array(),
 				'templateid'		=> 0);
 
-		if(!check_db_fields($item_db_fields, $item)){
+		if (!check_db_fields($item_db_fields, $item)) {
 			error(S_INCORRECT_ARGUMENTS_PASSED_TO_FUNCTION.SPACE.'[add_item]');
 			return false;
 		}
 
-		$host=get_host_by_hostid($item['hostid']);
-		if(!$host){
+		if (!$host = get_host_by_hostid($item['hostid'])) {
 			return false;
 		}
 
-		if(($i = array_search(0,$item['applications'])) !== FALSE)
+		if (($i = array_search(0, $item['applications'])) !== FALSE) {
 			unset($item['applications'][$i]);
+		}
 
-		if(!preg_match('/^'.ZBX_PREG_ITEM_KEY_FORMAT.'$/u', $item['key_']) ){
-			error(S_INCORRECT_KEY_FORMAT.SPACE."'key_name[param1,param2,...]'");
+		if (!itemIsValid($item['key_'], $item['type'], $item['value_type'], $item['delay'], $item['delay_flex'], $item['snmp_port'])) {
 			return false;
 		}
 
-		if(($item['type'] == ITEM_TYPE_DB_MONITOR && $item['key_'] == 'db.odbc.select[<unique short description>]') ||
-		   ($item['type'] == ITEM_TYPE_SSH && $item['key_'] == 'ssh.run[<unique short description>,<ip>,<port>,<encoding>]') ||
-		   ($item['type'] == ITEM_TYPE_TELNET && $item['key_'] == 'telnet.run[<unique short description>,<ip>,<port>,<encoding>]')) {
-		   	error(S_ITEMS_CHECK_KEY_DEFAULT_EXAMPLE_PASSED);
-		   	return false;
-		}
-
-		$res = calculate_item_nextcheck(0, $item['type'], $item['delay'], $item['delay_flex'], time());
-		if ($res['delay'] == SEC_PER_YEAR && $item['type'] != ITEM_TYPE_ZABBIX_ACTIVE && $item['type'] != ITEM_TYPE_TRAPPER){
-			error(S_ITEM_WILL_NOT_BE_REFRESHED_PLEASE_ENTER_A_CORRECT_UPDATE_INTERVAL);
-			return FALSE;
-		}
-
-		if(($item['snmp_port']<1 || $item['snmp_port']>65535) && in_array($item['type'],array(ITEM_TYPE_SNMPV1,ITEM_TYPE_SNMPV2C,ITEM_TYPE_SNMPV3))){
-			error(S_INVALID_SNMP_PORT);
-			return FALSE;
-		}
-
-		if(preg_match('/^(log|logrt|eventlog)\[/', $item['key_']) && ($item['value_type'] != ITEM_VALUE_TYPE_LOG)){
-			error(S_TYPE_INFORMATION_BUST_LOG_FOR_LOG_KEY);
-			return FALSE;
-		}
-
-		if($item['value_type'] == ITEM_VALUE_TYPE_STR){
-			$item['delta']=0;
+		if ($item['value_type'] == ITEM_VALUE_TYPE_STR) {
+			$item['delta'] = 0;
 		}
 
 		if ($item['value_type'] != ITEM_VALUE_TYPE_UINT64) {
 			$item['data_type'] = 0;
-		}
-
-		if(($item['type'] == ITEM_TYPE_AGGREGATE) && ($item['value_type'] != ITEM_VALUE_TYPE_FLOAT)){
-			error(S_VALUE_TYPE_MUST_FLOAT_FOR_AGGREGATE_ITEMS);
-			return FALSE;
-		}
-
-		if($item['type'] == ITEM_TYPE_AGGREGATE){
-			/* grpfunc['group','key','itemfunc','numeric param'] */
-			if(preg_match('/^((.)*)(\[\"((.)*)\"\,\"((.)*)\"\,\"((.)*)\"\,\"([0-9]+)\"\])$/i', $item['key_'], $arr)){
-				$g=$arr[1];
-				if(!str_in_array($g,array("grpmax","grpmin","grpsum","grpavg"))){
-					error(S_GROUP_FUNCTION.SPACE."[$g]".SPACE.S_IS_NOT_ONE_OF.SPACE."[grpmax, grpmin, grpsum, grpavg]");
-					return FALSE;
-				}
-				// Group
-				$g=$arr[4];
-				// Key
-				$g=$arr[6];
-				// Item function
-				$g=$arr[8];
-				if(!str_in_array($g,array('last', 'min', 'max', 'avg', 'sum','count'))){
-					error(S_ITEM_FUNCTION.SPACE.'['.$g.']'.SPACE.S_IS_NOT_ONE_OF.SPACE.'[last, min, max, avg, sum, count]');
-					return FALSE;
-				}
-				// Parameter
-				$g=$arr[10];
-			}
-			else{
-				error(S_KEY_DOES_NOT_MATCH.SPACE.'grpfunc["group","key","itemfunc","numeric param"]');
-				return FALSE;
-			}
 		}
 
 		$sql = 'SELECT itemid, hostid, templateid '.
@@ -422,7 +410,7 @@
 			);
 
 		if ($result)
-			add_audit_ext(AUDIT_ACTION_ADD, AUDIT_RESOURCE_ITEM, $itemid, $item['description'], NULL, NULL, NULL);
+			add_audit_ext(AUDIT_ACTION_ADD, AUDIT_RESOURCE_ITEM, $itemid, $host['host'].':'.$item['description'], NULL, NULL, NULL);
 		else
 			return $result;
 
@@ -431,7 +419,7 @@
 			DBexecute('INSERT INTO items_applications (itemappid,itemid,applicationid) VALUES('.$itemappid.','.$itemid.','.$appid.')');
 		}
 
-		info(S_ADDED_NEW_ITEM.SPACE.$host['host'].':'.$item['key_']);
+		info(S_ADDED_NEW_ITEM.SPACE.'"'.$host['host'].':'.$item['key_'].'"');
 
 // add items to child hosts
 
@@ -477,8 +465,9 @@
 
 				$result &= DBexecute($sql);
 				if ($result){
+					$host=get_host_by_hostid($row['hostid']);
 					$item_new = get_item_by_itemid($row['itemid']);
-					add_audit_ext(AUDIT_ACTION_UPDATE, AUDIT_RESOURCE_ITEM, $row['itemid'], $row['description'], 'items', $row, $item_new);
+					add_audit_ext(AUDIT_ACTION_UPDATE, AUDIT_RESOURCE_ITEM, $row['itemid'], $host['host'].':'.$row['description'], 'items', $row, $item_new);
 				}
 			}
 		}
@@ -503,61 +492,35 @@
 	 * Comments: !!! Don't forget sync code with C !!!                            *
 	 *                                                                            *
 	 ******************************************************************************/
-	function update_item($itemid,$item){
-/*
-		$item = array('description','key','hostid','delay','history','status','type',
-		'snmp_community','snmp_oid','value_type','trapper_hosts','snmp_port','units','multiplier','delta',
-		'snmpv3_securityname','snmpv3_securitylevel','snmpv3_authpassphrase','snmpv3_privpassphrase',
-		'formula','trends','logtimefmt','valuemapid','delay_flex','params','ipmi_sensor','applications','templateid');
-*/
-		$upd_app = ((isset($item['applications'])) && !is_null($item['applications']));
+	function update_item($itemid, $item) {
+		$upd_app = (isset($item['applications']) && !is_null($item['applications']));
 		$item_in_params = $item;
 
 		$item_data = get_item_by_itemid_limited($itemid);
 		$item_data['applications'] = get_applications_by_itemid($itemid);
 
-		if(!check_db_fields($item_data, $item)){
+		if (!check_db_fields($item_data, $item)) {
 			error(S_INCORRECT_ARGUMENTS_PASSED_TO_FUNCTION.SPACE.'[update_item]');
 			return false;
 		}
 
-		$host = get_host_by_hostid($item['hostid']);
-
-		if(($i = array_search(0,$item['applications'])) !== FALSE) unset($item['applications'][$i]);
-
-		if( !preg_match('/^'.ZBX_PREG_ITEM_KEY_FORMAT.'$/u', $item['key_']) ){
-			error(S_INCORRECT_KEY_FORMAT.SPACE."'key_name[param1,param2,...]'");
+		if (!$host = get_host_by_hostid($item['hostid'])) {
 			return false;
 		}
 
-		if(($item['type'] == ITEM_TYPE_DB_MONITOR && $item['key_'] == 'db.odbc.select[<unique short description>]') ||
-		   ($item['type'] == ITEM_TYPE_SSH && $item['key_'] == 'ssh.run[<unique short description>,<ip>,<port>,<encoding>]') ||
-		   ($item['type'] == ITEM_TYPE_TELNET && $item['key_'] == 'telnet.run[<unique short description>,<ip>,<port>,<encoding>]')) {
-		   	error(S_ITEMS_CHECK_KEY_DEFAULT_EXAMPLE_PASSED);
+		if (($i = array_search(0,$item['applications'])) !== FALSE) {
+			unset($item['applications'][$i]);
+		}
+
+		if (!itemIsValid($item['key_'], $item['type'], $item['value_type'], $item['delay'], $item['delay_flex'], $item['snmp_port'])) {
 			return false;
 		}
 
-		$res = calculate_item_nextcheck(0, $item['type'], $item['delay'], $item['delay_flex'], time());
-		if ($res['delay'] == SEC_PER_YEAR && $item['type'] != ITEM_TYPE_ZABBIX_ACTIVE && $item['type'] != ITEM_TYPE_TRAPPER){
-			error(S_ITEM_WILL_NOT_BE_REFRESHED_PLEASE_ENTER_A_CORRECT_UPDATE_INTERVAL);
-			return FALSE;
+		if ($item['value_type'] == ITEM_VALUE_TYPE_STR) {
+			$item['delta'] = 0;
 		}
 
-		if(($item['snmp_port'] < 1 || $item['snmp_port'] > 65535) && in_array($item['type'], array(ITEM_TYPE_SNMPV1,ITEM_TYPE_SNMPV2C,ITEM_TYPE_SNMPV3))){
-			error(S_INVALID_SNMP_PORT);
-			return FALSE;
-		}
-
-		if($item['value_type'] == ITEM_VALUE_TYPE_STR){
-			$item['delta']=0;
-		}
-
-		if(preg_match('/^(log|logrt|eventlog)\[/', $item['key_']) && ($item['value_type'] != ITEM_VALUE_TYPE_LOG)){
-			error(S_TYPE_INFORMATION_BUST_LOG_FOR_LOG_KEY);
-			return FALSE;
-		}
-
-		if($item['value_type'] != ITEM_VALUE_TYPE_UINT64) {
+		if ($item['value_type'] != ITEM_VALUE_TYPE_UINT64) {
 			$item['data_type'] = 0;
 		}
 
@@ -605,9 +568,15 @@
 			}
 		}
 
+		//validating item key
+		$itemKey = new CItemKey($item['key_']);
+		if(!$itemKey->isValid()){
+			error(S_ERROR_IN_ITEM_KEY.SPACE.$itemKey->getError());
+			return false;
+		}
+
 		$item_old = get_item_by_itemid($itemid);
 		DBexecute('UPDATE items SET lastlogsize=0, mtime=0 WHERE itemid='.$itemid.' AND key_<>'.zbx_dbstr($item['key_']));
-
 
 		if($upd_app){
 			$result = DBexecute('DELETE FROM items_applications WHERE itemid='.$itemid);
@@ -639,8 +608,8 @@
 				'delta='.$item['delta'].','.
 				'snmpv3_securityname='.zbx_dbstr($item['snmpv3_securityname']).','.
 				'snmpv3_securitylevel='.$item['snmpv3_securitylevel'].','.
-				'snmpv3_authpassphrase='.zbx_dbstr($item['snmpv3_authpassphrase']).','.
-				'snmpv3_privpassphrase='.zbx_dbstr($item['snmpv3_privpassphrase']).','.
+				'snmpv3_authpassphrase='.($item['snmpv3_securitylevel'] == ITEM_SNMPV3_SECURITYLEVEL_AUTHPRIV || $item['snmpv3_securitylevel'] == ITEM_SNMPV3_SECURITYLEVEL_AUTHNOPRIV ? zbx_dbstr($item['snmpv3_authpassphrase']) : "''").','.
+				'snmpv3_privpassphrase='.($item['snmpv3_securitylevel'] == ITEM_SNMPV3_SECURITYLEVEL_AUTHPRIV ? zbx_dbstr($item['snmpv3_privpassphrase']) : "''").','.
 				'formula='.zbx_dbstr($item['formula']).','.
 				'trends='.$item['trends'].','.
 				'logtimefmt='.zbx_dbstr($item['logtimefmt']).','.
@@ -658,13 +627,13 @@
 
 		if ($result){
 			$item_new = get_item_by_itemid($itemid);
-			add_audit_ext(AUDIT_ACTION_UPDATE, AUDIT_RESOURCE_ITEM, $itemid, $item_old['description'], 'items', $item_old, $item_new);
+			add_audit_ext(AUDIT_ACTION_UPDATE, AUDIT_RESOURCE_ITEM, $itemid, $host['host'].':'.$item_old['description'], 'items', $item_old, $item_new);
 		}
 
 		update_item_status($itemid, $item['status']);
 
 		if($result){
-			info(S_ITEM.SPACE."'".$host['host'].':'.$item['key_']."'".SPACE.S_UPDATED_SMALL);
+			info(S_ITEM.SPACE.'"'.$host['host'].':'.$item['key_'].'"'.SPACE.S_UPDATED_SMALL);
 		}
 
 	return $result;
@@ -686,44 +655,41 @@
 		$item_data = get_item_by_itemid_limited($itemid);
 
 		$restore_rules= array(
-					'description'		=> array(),
-					'key_'			=> array(),
-					'hostid'		=> array(),
-					'delay'			=> array('template' => 1),
-					'history'		=> array('template' => 1 , 'httptest' => 1),
-					'status'		=> array('template' => 1 , 'httptest' => 1),
-					'type'			=> array(),
-					'snmp_community'	=> array('template' => 1),
-					'snmp_oid'		=> array(),
-					'snmp_port'		=> array('template' => 1),
-					'snmpv3_securityname'	=> array('template' => 1),
-					'snmpv3_securitylevel'	=> array('template' => 1),
-					'snmpv3_authpassphrase'	=> array('template' => 1),
-					'snmpv3_privpassphrase'	=> array('template' => 1),
-					'value_type'		=> array(),
-					'data_type'		=> array(),
-					'trapper_hosts'		=> array('template' =>1 ),
-					'units'			=> array(),
-					'multiplier'		=> array(),
-					'delta'			=> array('template' => 1 , 'httptest' => 1),
-					'formula'		=> array(),
-					'trends'		=> array('template' => 1 , 'httptest' => 1),
-					'logtimefmt'		=> array(),
-					'valuemapid'		=> array('httptest' => 1),
-					'authtype'		=> array('template' => 1),
-					'username'		=> array('template' => 1),
-					'password'		=> array('template' => 1),
-					'publickey'		=> array('template' => 1),
-					'privatekey'		=> array('template' => 1),
-					'params'		=> array('template' => 1),
-					'delay_flex'		=> array('template' => 1),
-					'ipmi_sensor'		=> array());
+			'description'		=> array(),
+			'key_'			=> array(),
+			'hostid'		=> array(),
+			'delay'			=> array('template' => 1),
+			'history'		=> array('template' => 1 , 'httptest' => 1),
+			'status'		=> array('template' => 1 , 'httptest' => 1),
+			'type'			=> array(),
+			'snmp_community'	=> array('template' => 1),
+			'snmp_oid'		=> array(),
+			'snmp_port'		=> array('template' => 1),
+			'snmpv3_securityname'	=> array('template' => 1),
+			'snmpv3_securitylevel'	=> array('template' => 1),
+			'snmpv3_authpassphrase'	=> array('template' => 1),
+			'snmpv3_privpassphrase'	=> array('template' => 1),
+			'value_type'		=> array(),
+			'data_type'		=> array(),
+			'trapper_hosts'		=> array('template' =>1 ),
+			'units'			=> array(),
+			'multiplier'		=> array(),
+			'delta'			=> array('template' => 1 , 'httptest' => 1),
+			'formula'		=> array(),
+			'trends'		=> array('template' => 1 , 'httptest' => 1),
+			'logtimefmt'		=> array(),
+			'valuemapid'		=> array('httptest' => 1),
+			'authtype'		=> array('template' => 1),
+			'username'		=> array('template' => 1),
+			'password'		=> array('template' => 1),
+			'publickey'		=> array('template' => 1),
+			'privatekey'		=> array('template' => 1),
+			'params'		=> array('template' => 1),
+			'delay_flex'		=> array('template' => 1),
+			'ipmi_sensor'		=> array()
+		);
 
 		foreach($restore_rules as $var_name => $info){
-/*			if(($item_data['type'] == ITEM_TYPE_HTTPTEST) && !isset($info['httptest'])){
-				$item[$var_name] = $item_data[$var_name];
-			}*/
-
 			if(!isset($info['template']) && (0 != $item_data['templateid'])){
 				$item[$var_name] = $item_data[$var_name];
 			}
@@ -733,10 +699,7 @@
 			}
 		}
 
-/*		if($item_data['type'] == ITEM_TYPE_HTTPTEST)
-			$item['applications'] = get_applications_by_itemid($itemid);*/
-
-	return update_item($itemid,$item);
+		return update_item($itemid,$item);
 	}
 
 	/*
@@ -755,22 +718,28 @@
 		zbx_value2array($templateids);
 
 		$db_items = get_items_by_hostid($hostid);
-		while($db_item = DBfetch($db_items)){
-			if($db_item["templateid"] == 0)
-				continue;
 
-			if( !is_null($templateids)){
+		$host = get_host_by_hostid($hostid);
+
+		while ($db_item = DBfetch($db_items)) {
+			if ($db_item["templateid"] == 0) {
+				continue;
+			}
+
+			if (!is_null($templateids)) {
 				$db_tmp_item = get_item_by_itemid($db_item["templateid"]);
 
-				if(!uint_in_array($db_tmp_item["hostid"], $templateids)) continue;
-			}
-
-			if($unlink_mode){
-				if(DBexecute('UPDATE items SET templateid=0 WHERE itemid='.$db_item["itemid"])){
-					info("Item '".$db_item["key_"]."' unlinked");
+				if (!uint_in_array($db_tmp_item["hostid"], $templateids)) {
+					continue;
 				}
 			}
-			else{
+
+			if ($unlink_mode) {
+				if (DBexecute('UPDATE items SET templateid=0 WHERE itemid='.$db_item["itemid"])) {
+					info(sprintf(S_ITEM_UNLINKED, $host['host'].':'.$db_item["key_"]));
+				}
+			}
+			else {
 				delete_item($db_item["itemid"]);
 			}
 		}
@@ -1047,50 +1016,20 @@
 /*		$result = DBexecute('DELETE FROM items WHERE '.DBcondition('itemid',$itemids));*/
 		if($result){
 			foreach($items as $itemid => $item){
-				info(S_ITEM.SPACE."'".$hosts[$itemid]['host'].':'.$item['key_']."'".SPACE.S_DELETED_SMALL);
+				info(S_ITEM.SPACE.'"'.$hosts[$itemid]['host'].':'.$item['key_'].'"'.SPACE.S_DELETED_SMALL);
 			}
 		}
 	return $result;
 	}
 
-	/*
-	 * Function: get_n_param
-	 *
-	 * Description:
-	 *     Return key parameter by index
-	 *
-	 * Author:
-	 *     Eugene Grigorjev (eugene.grigorjev@zabbix.com)
-	 *
-	 * Comments: indexes between 1-x
-	 *
-	 */
-	function get_n_param($key, $num){
-		$param="";
-
-		$num--;
-//SDI(ZBX_KEY_PARAM_ID);
-//		if(ereg('^'.ZBX_EREG_ITEM_KEY_FORMAT.'$', $key, $arr)){
-		if(preg_match('/^'.ZBX_PREG_ITEM_KEY_FORMAT.'$/', $key, $arr)){
-			if(!isset($arr[ZBX_KEY_PARAM_ID]))  $arr[ZBX_KEY_PARAM_ID] = false;
-
-			$params = zbx_get_params($arr[ZBX_KEY_PARAM_ID]);
-
-			if(isset($params[$num])){
-				$param = $params[$num];
-			}
-		}
-
-	return $param;
-	}
 
 	function expand_item_key_by_data($item){
 		$key =& $item['key_'];
 		$macStack = array();
 
-		$macroses = array('{HOSTNAME}', '{IPADDRESS}', '{HOST.DNS}', '{HOST.CONN}');
+		$macros = array('{HOSTNAME}', '{IPADDRESS}', '{HOST.DNS}', '{HOST.CONN}');
 
-		foreach($macroses as $macro){
+		foreach($macros as $macro){
 			$pos = 0;
 			while($pos = zbx_strpos($key, $macro, $pos)){
 				$pos++;
@@ -1124,15 +1063,47 @@
 		return $item['key_'];
 	}
 
-	function item_description($item){
-		$descr = $item['description'];
-		$key = expand_item_key_by_data($item);
 
-		for($i=9;$i>0;$i--){
-			$descr=str_replace("$$i",get_n_param($key,$i),$descr);
+	/**
+	 * Expand macros inside key name and return it
+	 * Example:
+	 *   key: 'test.key[a, b, "{HOSTNAME}"]'
+	 *   name: 'Test item $1, $2, $3'
+	 *   result: 'Test item a, b, Zabbix-server'
+	 *
+	 * @param array $item
+	 * @return string
+	 */
+	function item_description($item){
+		$name = $item['description'];
+		// if item name contains $1..$9 macros, we need to expand them
+		if(preg_match('/\$[1-9]/', $name)){
+			$key = expand_item_key_by_data($item);
+
+			// parsing key to get the parameters out of it
+			$ItemKey = new cItemKey($key);
+
+			if($ItemKey->isValid()){
+				$keyParameters = $ItemKey->getParameters();
+
+				$searchOffset = 0;
+				while(preg_match('/\$[1-9]/', $name, $matches, PREG_OFFSET_CAPTURE, $searchOffset)){
+					// matches[0][0] - matched param, [1] - second character of it
+					$paramNumber = $matches[0][0][1] - 1;
+					$replaceString = isset($keyParameters[$paramNumber]) ? $keyParameters[$paramNumber] : '';
+
+					$name = substr_replace($name, $replaceString, $matches[0][1], 2);
+					$searchOffset = $matches[0][1] + strlen($replaceString);
+				}
+			}
 		}
 
-	return $descr;
+		if(preg_match_all('/'.ZBX_PREG_EXPRESSION_USER_MACROS.'/', $name, $arr)){
+			$macros = CUserMacro::getMacros($arr[1], array('itemid' => $item['itemid']));
+			$name = str_replace(array_keys($macros), array_values($macros), $name);
+		}
+
+		return $name;
 	}
 
 	function get_realhost_by_itemid($itemid){
@@ -1143,18 +1114,12 @@
 	return get_host_by_itemid($itemid);
 	}
 
-/*
- * Function: get_items_data_overview
- *
- * Description:
- *     Retrieve overview table object for items
- *
- * Author:
- *     Eugene Grigorjev (eugene.grigorjev@zabbix.com)
- *
- * Comments:
- *
- */
+	/**
+	 * Retrieve overview table object for items.
+	 * @param $hostids
+	 * @param null $view_style
+	 * @return CTableInfo
+	 */
 	function get_items_data_overview($hostids,$view_style=null){
 		global $USER_DETAILS;
 
@@ -1222,7 +1187,7 @@
 		if($view_style == STYLE_TOP){
 			$header=array(new CCol(S_ITEMS,'center'));
 			foreach($hosts as $hostname){
-				$header = array_merge($header,array(new CImg('vtext.php?text='.$hostname.$vTextColor)));
+				$header = array_merge($header,array(new CImg('vtext.php?text='.urlencode($hostname).$vTextColor)));
 			}
 
 			$table->SetHeader($header,'vertical_header');
@@ -1239,7 +1204,7 @@
 		else{
 			$header=array(new CCol(S_HOSTS,'center'));
 			foreach($items as $descr => $ithosts){
-				$header = array_merge($header,array(new CImg('vtext.php?text='.$descr.$vTextColor)));
+				$header = array_merge($header,array(new CImg('vtext.php?text='.urlencode($descr).$vTextColor)));
 			}
 
 			$table->SetHeader($header,'vertical_header');
@@ -1404,26 +1369,30 @@
 	return TRUE;
 	}
 
-/******************************************************************************
- *                                                                            *
- * Comments: !!! Don't forget sync code with C !!!                            *
- *                                                                            *
- ******************************************************************************/
-	function delete_trends_by_itemid($itemids, $use_housekeeper=0){
-		zbx_value2array($itemids);
+	/**
+	 * Clear trends history for provided itemIDs or schedule this work for housekeeper
+	 *
+	 * @param mixed $itemIds IDs of items for which history should be cleared
+	 * @param bool $useHousekeeper schedule deletion for housekeeper instead of deleting now
+	 * @return bool
+	 */
+	function delete_trends_by_itemid($itemIds, $useHousekeeper = false){
+		zbx_value2array($itemIds);
 
-		if($use_housekeeper){
-			foreach($itemids as $id => $itemid){
+		if($useHousekeeper){
+			foreach($itemIds as $itemId){
 				$housekeeperid = get_dbid('housekeeper','housekeeperid');
 				DBexecute('INSERT INTO housekeeper (housekeeperid,tablename,field,value)'.
-					" VALUES ($housekeeperid, 'trends','itemid',$itemid)");
+					" VALUES ($housekeeperid,'trends','itemid',$itemId)");
 				$housekeeperid = get_dbid('housekeeper','housekeeperid');
 				DBexecute('INSERT INTO housekeeper (housekeeperid,tablename,field,value)'.
-					" VALUES ($housekeeperid, 'trends_uint','itemid',$itemid)");
+					" VALUES ($housekeeperid,'trends_uint','itemid',$itemId)");
 			}
-			return TRUE;
+			return true;
 		}
-	return	DBexecute('DELETE FROM trends WHERE '.DBcondition('itemid',$itemids));
+		$r1 = DBexecute('DELETE FROM trends WHERE '.DBcondition('itemid', $itemIds));
+		$r2 = DBexecute('DELETE FROM trends_uint WHERE '.DBcondition('itemid', $itemIds));
+		return $r1 && $r2;
 	}
 
 	function format_lastvalue($db_item){
@@ -1747,5 +1716,45 @@
 		}
 
 	return array('nextcheck' => $nextcheck, 'delay' => $delay);
+	}
+
+
+	/**
+	 * Check if given character is a valid key id char
+	 * this function is a copy of is_key_char() from /src/libs/zbxcommon/misc.c
+	 * don't forget to take look in there before changing anything
+	 *
+	 * @author Konstantin Buravcov
+	 * @param string $char
+	 * @return bool
+	 */
+	function isKeyIdChar($char){
+		return (
+			($char >= 'a' && $char <= 'z')
+			|| ($char == '.' || $char == '_' || $char == '-')
+			|| ($char >= 'A' && $char <= 'Z')
+			|| ($char >= '0' && $char <= '9')
+		);
+	}
+
+/*
+ * Function: httpitemExists
+ *
+ * Description:
+ *     Function returns true if http item exists in the $items array.
+ *     The array should contain a field 'type'
+ *
+ * Author:
+ *     Alexander Vladishev
+ *
+ * Comments:
+ *
+ */
+	function httpitemExists($items){
+		foreach($items as $item)
+			if ($item['type'] == ITEM_TYPE_HTTPTEST)
+				return true;
+
+		return false;
 	}
 ?>

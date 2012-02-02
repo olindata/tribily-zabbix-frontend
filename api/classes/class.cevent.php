@@ -342,8 +342,6 @@ class CEvent extends CZBXAPI{
 		if(!empty($sql_parts['order']))		$sql_order.= ' ORDER BY '.implode(',',$sql_parts['order']);
 		$sql_limit = $sql_parts['limit'];
 
-		$distinct = (count($sql_parts['from']) > 1)?'DISTINCT':'';
-
 		$sql = 'SELECT '.zbx_db_distinct($sql_parts).' '.$sql_select.
 				' FROM '.$sql_from.
 				' WHERE '.$sql_where.
@@ -351,8 +349,9 @@ class CEvent extends CZBXAPI{
 		$db_res = DBselect($sql, $sql_limit);
  //SDI($sql);
 		while($event = DBfetch($db_res)){
-			if($options['countOutput'])
-				$result = $event;
+			if($options['countOutput']){
+				$result = $event['rowscount'];
+			}
 			else{
 				$eventids[$event['eventid']] = $event['eventid'];
 
@@ -535,7 +534,7 @@ Copt::memoryPick();
 
 		$eventids = array();
 		$result = true;
-		
+
 		$options = array(
 			'triggerids' => zbx_objectValues($events, 'objectid'),
 			'output' => API_OUTPUT_EXTEND,
@@ -619,23 +618,38 @@ Copt::memoryPick();
  * @param array $eventids['eventids']
  * @return boolean
  */
-	public static function delete($events){
-		$events = zbx_toArray($events);
-		$eventids = zbx_objectValues($events, 'eventid');
+	public static function delete($eventids){
+		$eventids = zbx_toArray($eventids);
 
-		if(!empty($eventids)){
-			$sql = 'DELETE FROM events WHERE '.DBcondition('eventid', $eventids);
-			$result = DBexecute($sql);
-		}
-		else{
-			self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, 'Empty input parameter [ eventids ]');
-			$result = false;
-		}
+		try{
+			self::BeginTransaction(__METHOD__);
 
-		if($result)
-			return true;
-		else{
-			self::setError(__METHOD__);
+			$options = array(
+				'eventids' => $eventids,
+				'editable' => 1,
+				'output' => API_OUTPUT_SHORTEN,
+				'preservekeys' => 1
+			);
+			$del_events = self::get($options);
+			foreach($eventids as $enum => $eventid){
+				if(!isset($del_events[$eventid])){
+					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSION);
+				}
+			}
+
+			$result = DBexecute('DELETE FROM events WHERE '.DBcondition('eventid', $eventids));
+			$result &= DBexecute('DELETE FROM alerts WHERE '.DBcondition('eventid', $eventids));
+
+			if(!$result) self::exception(ZBX_API_ERROR_PARAMETERS, 'Can not delete event');
+
+			self::EndTransaction(true, __METHOD__);
+			return array('eventids' => $eventids);
+		}
+		catch(APIException $e){
+			self::EndTransaction(false, __METHOD__);
+			$error = $e->getErrors();
+			$error = reset($error);
+			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
 	}
@@ -665,94 +679,95 @@ Copt::memoryPick();
 		}
 	}
 
-	public static function acknowledge($events_data){
+	public static function acknowledge($data) {
 		global $USER_DETAILS;
 
-		if(empty($events_data['events'])) return array('eventids' => array());
-		
-		$events = isset($events_data['events']) ? zbx_toArray($events_data['events']) : array();
-		$eventids = zbx_objectValues($events, 'eventid');
-		$eventids = array_combine($eventids, $eventids);
+		$eventids = isset($data['eventids']) ? zbx_toArray($data['eventids']) : array();
+		$eventids = zbx_toHash($eventids);
 
-		try{
+		try {
 			self::BeginTransaction(__METHOD__);
 
-// PERMISSIONS {{{
+			// PERMISSIONS {{{
 			$options = array(
 				'eventids' => $eventids,
-				'preservekeys' => 1,
 				'output' => API_OUTPUT_EXTEND,
 				'select_triggers' => API_OUTPUT_EXTEND,
+				'preservekeys' => 1
 			);
-			$allowed_events = self::get($options);
-			foreach($events as $num => $event){
-				if(!isset($allowed_events[$event['eventid']])){
-					self::exception(ZBX_API_ERROR_PERMISSIONS, 'You do not have enough rights for operation');
+			$allowedEvents = self::get($options);
+			foreach ($eventids as $eventid) {
+				if (!isset($allowedEvents[$eventid])) {
+					self::exception(ZBX_API_ERROR_PERMISSIONS, S_NO_PERMISSIONS);
 				}
 			}
-// }}} PERMISSIONS
+			// }}} PERMISSIONS
 
-			foreach($allowed_events as $event){
+			foreach ($allowedEvents as $event) {
 				$trig = reset($event['triggers']);
-				if(!(($trig['type'] == TRIGGER_MULT_EVENT_ENABLED) && ($event['value'] == TRIGGER_VALUE_TRUE))){
-				
-					$val = ($event['value'] == TRIGGER_VALUE_TRUE ? TRIGGER_VALUE_FALSE : TRIGGER_VALUE_TRUE);
+				if ($trig['type'] == TRIGGER_MULT_EVENT_ENABLED && $event['value'] == TRIGGER_VALUE_TRUE) {
+					continue;
+				}
 
-					$sql = ' SELECT eventid, object, objectid'.
-						' FROM events'.
-						' WHERE eventid < '.$event['eventid'].
-						' AND objectid = '.$event['objectid'].
-						' AND value = '.$val.
-						' AND object = '.EVENT_OBJECT_TRIGGER.
-						' ORDER BY object desc, objectid desc, eventid DESC';
-					$first = DBfetch(DBselect($sql, 1));
-					$first_sql = $first ? ' AND e.eventid > '.$first['eventid'] : '';
+				$val = ($event['value'] == TRIGGER_VALUE_TRUE) ? TRIGGER_VALUE_FALSE : TRIGGER_VALUE_TRUE;
 
+				$sql = 'SELECT e.object,e.objectid,e.eventid'.
+					' FROM events e'.
+					' WHERE e.object='.EVENT_OBJECT_TRIGGER.
+						' AND e.objectid='.$event['objectid'].
+						' AND e.value='.$val.
+						' AND e.eventid<'.$event['eventid'].
+					' ORDER BY e.object DESC,e.objectid DESC,e.eventid DESC';
+				$first = DBfetch(DBselect($sql, 1));
+				$first_sql = $first ? ' AND e.eventid>'.$first['eventid'] : '';
 
-					$sql = ' SELECT eventid, object, objectid'.
-						' FROM events'.
-						' WHERE eventid > '.$event['eventid'].
-						' AND objectid = '.$event['objectid'].
-						' AND value = '.$val.
-						' AND object = '.EVENT_OBJECT_TRIGGER.
-						' ORDER BY object ASC, objectid ASC, eventid ASC';
-					$last = DBfetch(DBselect($sql, 1));
-					$last_sql = $last ? ' AND e.eventid < '.$last['eventid'] : '';
+				$sql = 'SELECT e.object,e.objectid,e.eventid'.
+					' FROM events e'.
+					' WHERE e.object='.EVENT_OBJECT_TRIGGER.
+						' AND e.objectid='.$event['objectid'].
+						' AND e.value='.$val.
+						' AND e.eventid>'.$event['eventid'].
+					' ORDER BY e.object,e.objectid,e.eventid';
+				$last = DBfetch(DBselect($sql, 1));
+				$last_sql = $last ? ' AND e.eventid<'.$last['eventid'] : '';
 
-					
-					$sql = 'SELECT e.eventid'.
-						' FROM events e'.
-						' WHERE e.objectid = '.$event['objectid'].
-							' AND e.value = '. ($val ? 0 : 1).
-							$first_sql.
-							$last_sql;
+				$sql = 'SELECT e.eventid'.
+					' FROM events e'.
+					' WHERE e.object='.EVENT_OBJECT_TRIGGER.
+						' AND e.objectid='.$event['objectid'].
+						' AND e.value='.$event['value'].
+						$first_sql.
+						$last_sql;
 
-					$db_events = DBselect($sql);
-					while($eventid = DBfetch($db_events)){
-						$eventids[$eventid['eventid']] = $eventid['eventid'];
-					}
+				$db_events = DBselect($sql);
+				while ($eventid = DBfetch($db_events)) {
+					$eventids[$eventid['eventid']] = $eventid['eventid'];
 				}
 			}
 
 			$sql = 'UPDATE events SET acknowledged=1 WHERE '.DBcondition('eventid', $eventids);
-			if(!DBexecute($sql)) self::exception(ZBX_API_ERROR_PARAMETERS, 'DBerror');
-
-			$time = time();
-			$message = zbx_dbstr($events_data['message']);
-
-			foreach($eventids as $eventid){
-				$sql = 'INSERT INTO acknowledges (acknowledgeid, userid, eventid, clock, message)'.
-					' VALUES ('.get_dbid('acknowledges', 'acknowledgeid').','.$USER_DETAILS['userid'].','.$eventid.','.$time.','.$message.')';
-
-				if(!DBexecute($sql)) self::exception(ZBX_API_ERROR_PARAMETERS, 'DBerror');
+			if (!DBexecute($sql)) {
+				self::exception(ZBX_API_ERROR_PARAMETERS, 'DBerror');
 			}
 
+			$time = time();
+			$dataInsert = array();
+			foreach ($eventids as $eventid) {
+				$dataInsert[] = array(
+					'userid' => $USER_DETAILS['userid'],
+					'eventid' => $eventid,
+					'clock' => $time,
+					'message'=> $data['message']
+				);
+			}
+
+			DB::insert('acknowledges', $dataInsert);
 
 			self::EndTransaction(true, __METHOD__);
 
-			return array('eventids' => $eventids);
+			return array('eventids' => array_values($eventids));
 		}
-		catch(APIException $e){
+		catch (APIException $e) {
 			self::EndTransaction(false, __METHOD__);
 
 			$error = $e->getErrors();
@@ -762,6 +777,5 @@ Copt::memoryPick();
 			return false;
 		}
 	}
-
 }
 ?>

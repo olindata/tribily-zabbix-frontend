@@ -22,6 +22,20 @@
 require_once('include/defines.inc.php');
 require_once('include/items.inc.php');
 
+	function httptest_authentications($type=null){
+		$authentication_types = array(
+			HTTPTEST_AUTH_NONE => S_NONE,
+			HTTPTEST_AUTH_BASIC => S_BASIC_AUTHENTICATION,
+			HTTPTEST_AUTH_NTLM => S_NTLM_AUTHENTICATION,
+		);
+
+		if(is_null($type))
+			return $authentication_types;
+		else if(isset($authentication_types[$type]))
+			return $authentication_types[$type];
+		else
+			return S_UNKNOWN;
+	}
 
 	function httptest_status2str($status){
 		switch($status){
@@ -44,15 +58,15 @@ require_once('include/items.inc.php');
 		return $status;
 	}
 
-	function db_save_step($hostid, $applicationid, $httptestid, $testname, $name, $no, $timeout, $url, $posts, $required, $status_codes, $delay, $history, $trends){
+	function db_save_step($hostid, $applicationid, $httptestid, $testname, $name, $no, $timeout, $url, $posts, $required, $status_codes, $delay, $history, $trends, $status){
 		if($no <= 0){
 			error(S_SCENARIO_STEP_NUMBER_CANNOT_BE_LESS_ONE);
 			return false;
 		}
 
 //		if(!eregi('^([0-9a-zA-Z\_\.[.-.]\$ ]+)$', $name)){
-		if(!preg_match('/^([0-9a-z_\.\-\$\s]+)$/i', $name)){
-			error(S_SCENARIO_STEP_NAME_SHOULD_CONTAIN.SPACE."'0-9a-zA-Z_ .$'-".SPACE.S_CHARACTERS_ONLY_SMALL);
+		if(!preg_match('/'.ZBX_PREG_PARAMS.'/i', $name)){
+			error(S_SCENARIO_STEP_NAME_SHOULD_CONTAIN.SPACE.S_PRINTABLE_ONLY);
 			return false;
 		}
 
@@ -78,19 +92,19 @@ require_once('include/items.inc.php');
 
 		$monitored_items = array(
 			array(
-				'description'	=> 'Download speed for step \'$2\' of scenario \'$1\'',
+				'description'	=> sprintf(S_DOWNLOAD_SPEED_FOR_STEP, '$2', '$1'),
 				'key_'		=> 'web.test.in['.$testname.','.$name.',bps]',
 				'type'		=> ITEM_VALUE_TYPE_FLOAT,
 				'units'		=> 'Bps',
 				'httpstepitemtype'=> HTTPSTEP_ITEM_TYPE_IN),
 			array(
-				'description'	=> 'Response time for step \'$2\' of scenario \'$1\'',
+				'description'	=> sprintf(S_RESPONSE_TIME_FOR_STEP, '$2', '$1'),
 				'key_'		=> 'web.test.time['.$testname.','.$name.',resp]',
 				'type'		=> ITEM_VALUE_TYPE_FLOAT,
 				'units'		=> 's',
 				'httpstepitemtype'=> HTTPSTEP_ITEM_TYPE_TIME),
 			array(
-				'description'	=> 'Response code for step \'$2\' of scenario \'$1\'',
+				'description'	=> sprintf(S_RESPONSE_CODE_FOR_STEP, '$2', '$1'),
 				'key_'		=> 'web.test.rspcode['.$testname.','.$name.']',
 				'type'		=> ITEM_VALUE_TYPE_UINT64,
 				'units'		=> '',
@@ -98,49 +112,49 @@ require_once('include/items.inc.php');
 			);
 
 		foreach($monitored_items as $item){
-			$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.status,i.delta,i.valuemapid '.
+			$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.delta,i.valuemapid '.
 				' from items i, httpstepitem hi '.
 				' where hi.httpstepid='.$httpstepid.' and hi.itemid=i.itemid '.
 				' and hi.type='.$item['httpstepitemtype']));
 
 			if(!$item_data){
-				$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.status,i.delta,i.valuemapid '.
+				$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.delta,i.valuemapid '.
 					' from items i where i.key_='.zbx_dbstr($item['key_']).' and i.hostid='.$hostid));
 			}
 
 			$item_args = array(
-				'description'		=> $item['description'],
-				'key_'			=> $item['key_'],
-				'hostid'		=> $hostid,
-				'delay'			=> $delay,
-				'type'			=> ITEM_TYPE_HTTPTEST,
-				'snmp_community'=>	'',
-				'snmp_oid'		=> '',
-				'value_type'		=> $item['type'],
-				'data_type'		=> ITEM_DATA_TYPE_DECIMAL,
-				'trapper_hosts'		=> 'localhost',
-				'snmp_port'		=> 161,
-				'units'			=> $item['units'],
-				'multiplier'		=> 0,
+				'description'			=> $item['description'],
+				'key_'					=> $item['key_'],
+				'hostid'				=> $hostid,
+				'delay'					=> $delay,
+				'type'					=> ITEM_TYPE_HTTPTEST,
+				'snmp_community'		=>	'',
+				'snmp_oid'				=> '',
+				'value_type'			=> $item['type'],
+				'data_type'				=> ITEM_DATA_TYPE_DECIMAL,
+				'trapper_hosts'			=> 'localhost',
+				'snmp_port'				=> 161,
+				'units'					=> $item['units'],
+				'multiplier'			=> 0,
 				'snmpv3_securityname'	=> '',
 				'snmpv3_securitylevel'	=> 0,
 				'snmpv3_authpassphrase'	=> '',
 				'snmpv3_privpassphrase'	=> '',
-				'formula'		=> 0,
-				'logtimefmt'		=> '',
-				'delay_flex'		=> '',
-				'authtype'		=> 0,
-				'username'		=> '',
-				'password'		=> '',
-				'publickey'		=> '',
-				'privatekey'		=> '',
-				'params'		=> '',
-				'ipmi_sensor'		=> '',
-				'applications'		=> array($applicationid));
+				'formula'				=> 0,
+				'logtimefmt'			=> '',
+				'delay_flex'			=> '',
+				'authtype'				=> 0,
+				'username'				=> '',
+				'password'				=> '',
+				'publickey'				=> '',
+				'privatekey'			=> '',
+				'params'				=> '',
+				'ipmi_sensor'			=> '',
+				'applications'			=> array($applicationid),
+				'status' 				=> ($status == HTTPTEST_STATUS_ACTIVE) ? ITEM_STATUS_ACTIVE : ITEM_STATUS_DISABLED); // transform httptest status to item status
 
 			if(!$item_data){
 				$item_args['history'] = $history;
-				$item_args['status'] = ITEM_STATUS_ACTIVE;
 				$item_args['delta'] = 0;
 				$item_args['trends'] = $trends;
 				$item_args['valuemapid'] = 0;
@@ -153,7 +167,6 @@ require_once('include/items.inc.php');
 				$itemid = $item_data['itemid'];
 
 				$item_args['history'] = $item_data['history'];
-				$item_args['status'] = $item_data['status'];
 				$item_args['delta'] = $item_data['delta'];
 				$item_args['trends'] = $item_data['trends'];
 				$item_args['valuemapid'] = $item_data['valuemapid'];
@@ -265,7 +278,7 @@ require_once('include/items.inc.php');
 				if(!isset($s['status_codes']))	$s['status_codes'] = '';
 
 				$result = db_save_step($hostid, $applicationid, $httptestid, $name, $s['name'], $sid+1, $s['timeout'],
-					$s['url'], $s['posts'], $s['required'],$s['status_codes'], $delay, $history, $trends);
+					$s['url'], $s['posts'], $s['required'],$s['status_codes'], $delay, $history, $trends, $status);
 
 				if(!$result){
 					throw new Exception('Cannot create web step');
@@ -299,49 +312,49 @@ require_once('include/items.inc.php');
 			);
 
 			foreach($monitored_items as $item){
-				$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.status,i.delta,i.valuemapid '.
+				$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.delta,i.valuemapid '.
 					' from items i, httptestitem hi '.
 					' where hi.httptestid='.$httptestid.' and hi.itemid=i.itemid '.
 					' and hi.type='.$item['httptestitemtype']));
 
 				if(!$item_data){
-					$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.status,i.delta,i.valuemapid '.
+					$item_data = DBfetch(DBselect('select i.itemid,i.history,i.trends,i.delta,i.valuemapid '.
 						' from items i where i.key_='.zbx_dbstr($item['key_']).' and i.hostid='.$hostid));
 				}
 
 				$item_args = array(
-					'description'	=> $item['description'],
-					'key_'			=> $item['key_'],
-					'hostid'		=> $hostid,
-					'delay'			=> $delay,
-					'type'			=> ITEM_TYPE_HTTPTEST,
-					'snmp_community'=> '',
-					'snmp_oid'		=> '',
-					'value_type'	=> $item['type'],
-					'data_type'		=> ITEM_DATA_TYPE_DECIMAL,
-					'trapper_hosts'	=> 'localhost',
-					'snmp_port'		=> 161,
-					'units'			=> $item['units'],
-					'multiplier'	=> 0,
+					'description'			=> $item['description'],
+					'key_'					=> $item['key_'],
+					'hostid'				=> $hostid,
+					'delay'					=> $delay,
+					'type'					=> ITEM_TYPE_HTTPTEST,
+					'snmp_community'		=> '',
+					'snmp_oid'				=> '',
+					'value_type'			=> $item['type'],
+					'data_type'				=> ITEM_DATA_TYPE_DECIMAL,
+					'trapper_hosts'			=> 'localhost',
+					'snmp_port'				=> 161,
+					'units'					=> $item['units'],
+					'multiplier'			=> 0,
 					'snmpv3_securityname'	=> '',
 					'snmpv3_securitylevel'	=> 0,
 					'snmpv3_authpassphrase'	=> '',
 					'snmpv3_privpassphrase'	=> '',
-					'formula'			=> 0,
-					'logtimefmt'		=> '',
-					'delay_flex'		=> '',
-					'authtype'		=> 0,
-					'username'		=> '',
-					'password'		=> '',
-					'publickey'		=> '',
-					'privatekey'		=> '',
-					'params'			=> '',
-					'ipmi_sensor'		=> '',
-					'applications'		=> array($applicationid));
+					'formula'				=> 0,
+					'logtimefmt'			=> '',
+					'delay_flex'			=> '',
+					'authtype'				=> 0,
+					'username'				=> '',
+					'password'				=> '',
+					'publickey'				=> '',
+					'privatekey'			=> '',
+					'params'				=> '',
+					'ipmi_sensor'			=> '',
+					'applications'			=> array($applicationid),
+					'status' 				=> ($status == HTTPTEST_STATUS_ACTIVE) ? ITEM_STATUS_ACTIVE : ITEM_STATUS_DISABLED); // transform httptest status to item status
 
 				if(!$item_data){
 					$item_args['history'] = $history;
-					$item_args['status'] = ITEM_STATUS_ACTIVE;
 					$item_args['delta'] = 0;
 					$item_args['trends'] = $trends;
 					$item_args['valuemapid'] = 0;
@@ -354,7 +367,6 @@ require_once('include/items.inc.php');
 					$itemid = $item_data['itemid'];
 
 					$item_args['history'] = $item_data['history'];
-					$item_args['status'] = $item_data['status'];
 					$item_args['delta'] = $item_data['delta'];
 					$item_args['trends'] = $item_data['trends'];
 					$item_args['valuemapid'] = $item_data['valuemapid'];
@@ -385,7 +397,7 @@ require_once('include/items.inc.php');
 	function add_httptest($hostid, $application, $name, $authentication, $http_user, $http_password, $delay, $status, $agent, $macros, $steps){
 		$result = db_save_httptest(null, $hostid, $application, $name, $authentication, $http_user, $http_password, $delay, $status, $agent, $macros, $steps);
 
-		if($result) info(S_SCENARIO.SPACE."'".$name."'".SPACE.S_ADDED_SMALL);
+		if($result) info(S_SCENARIO.SPACE.'"'.$name.'"'.SPACE.S_ADDED_SMALL);
 
 	return $result;
 	}
@@ -393,7 +405,7 @@ require_once('include/items.inc.php');
 	function update_httptest($httptestid, $hostid, $application, $name, $authentication, $http_user, $http_password, $delay, $status, $agent, $macros, $steps){
 		$result = db_save_httptest($httptestid, $hostid, $application, $name, $authentication, $http_user, $http_password, $delay, $status, $agent, $macros, $steps);
 
-		if($result)	info(S_SCENARIO.SPACE."'".$name."'".SPACE.S_UPDATED_SMALL);
+		if($result)	info(S_SCENARIO.SPACE.'"'.$name.'"'.SPACE.S_UPDATED_SMALL);
 
 	return $result;
 	}

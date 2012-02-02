@@ -27,7 +27,7 @@ require_once('include/users.inc.php');
 $page['title'] = 'S_AUDIT';
 $page['file'] = 'auditacts.php';
 $page['hist_arg'] = array();
-$page['scripts'] = array('class.calendar.js','effects.js','dragdrop.js','gtlc.js');
+$page['scripts'] = array('class.calendar.js','gtlc.js');
 
 $page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
@@ -49,8 +49,9 @@ include_once('include/page_header.php');
 		'stime'=>	array(T_ZBX_STR, O_OPT,	 null,	null, null),
 //ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			NULL),
-		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj})'),
+		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj}) && ("filter"=={favobj})'),
 		'state'=>		array(T_ZBX_INT, O_OPT, P_ACT,  NOT_EMPTY,		'isset({favobj}) && ("filter"=={favobj})'),
+		'favid'=>		array(T_ZBX_INT, O_OPT, P_ACT,  null,			null),
 	);
 
 	check_fields($fields);
@@ -60,6 +61,12 @@ include_once('include/page_header.php');
 	if(isset($_REQUEST['favobj'])){
 		if('filter' == $_REQUEST['favobj']){
 			CProfile::update('web.auditacts.filter.state',$_REQUEST['state'], PROFILE_TYPE_INT);
+		}
+		// saving fixed/dynamic setting to profile
+		if('timelinefixedperiod' == $_REQUEST['favobj']){
+			if(isset($_REQUEST['favid'])){
+				CProfile::update('web.auditacts.timelinefixed', $_REQUEST['favid'], PROFILE_TYPE_INT);
+			}
 		}
 	}
 
@@ -161,11 +168,12 @@ include_once('include/page_header.php');
 		'sortorder' => ZBX_SORT_DOWN,
 		'limit' => ($config['search_limit']+1)
 	);
+
 	if($_REQUEST['alias']){
-		$user = CUser::getObjects(array('alias' => $_REQUEST['alias']));
-		$user = reset($user);
-		$options['userids'] = $user['userid'];
+		$users = CUser::get(array('filter' => array('alias' => $_REQUEST['alias'])));
+		$options['userids'] = zbx_objectValues($users, 'userid');
 	}
+
 	$alerts = CAlert::get($options);
 
 // get first event for selected filters, to get starttime for timeline bar
@@ -247,7 +255,8 @@ include_once('include/page_header.php');
 		'loadImage' => 0,
 		'loadScroll' => 1,
 		'dynamic' => 0,
-		'mainObject' => 1
+		'mainObject' => 1,
+		'periodFixed' => CProfile::get('web.auditacts.timelinefixed', 1)
 	);
 
 	zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');

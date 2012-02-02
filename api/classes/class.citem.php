@@ -73,6 +73,7 @@ class CItem extends CZBXAPI{
 		$def_options = array(
 			'nodeids'				=> null,
 			'groupids'				=> null,
+			'templateids'			=> null,
 			'hostids'				=> null,
 			'proxyids'				=> null,
 			'itemids'				=> null,
@@ -94,8 +95,12 @@ class CItem extends CZBXAPI{
 
 			'belongs'				=> null,
 			'with_triggers'			=> null,
-//
-			'pattern'				=> null,
+// filter
+			'filter'					=> null,
+			'search'					=> null,
+			'startSearch'				=> null,
+			'excludeSearch'				=> null,
+			'searchWildcardsEnabled'	=> null,
 
 // OutPut
 			'output'				=> API_OUTPUT_REFER,
@@ -177,6 +182,19 @@ class CItem extends CZBXAPI{
 
 			if(!is_null($options['groupCount'])){
 				$sql_parts['group']['hg'] = 'hg.groupid';
+			}
+		}
+
+// templateids
+		if(!is_null($options['templateids'])){
+			zbx_value2array($options['templateids']);
+
+			if(!is_null($options['hostids'])){
+				zbx_value2array($options['hostids']);
+				$options['hostids'] = array_merge($options['hostids'], $options['templateids']);
+			}
+			else{
+				$options['hostids'] = $options['templateids'];
 			}
 		}
 
@@ -296,23 +314,15 @@ class CItem extends CZBXAPI{
 			}
 		}
 
-// API_OUTPUT_EXTEND
-		if($options['output'] == API_OUTPUT_EXTEND){
-			$sql_parts['select']['items'] = 'i.*';
+
+// search
+		if(is_array($options['search'])){
+			zbx_db_search('items i', $options, $sql_parts);
 		}
-
-// pattern
-		if(!is_null($options['pattern'])){
-			$sql_parts['where']['description'] = ' UPPER(i.description) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
-		}
-
-		if(isset($options['patternKey']))
-			$sql_parts['where']['key_'] = ' UPPER(i.key_) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['patternKey']).'%');
-
 
 // --- FILTER ---
-		if(!is_null($options['filter'])){
-			zbx_value2array($options['filter']);
+		if(is_array($options['filter'])){
+			zbx_db_filter('items i', $options, $sql_parts);
 
 			if(isset($options['filter']['host'])){
 				zbx_value2array($options['filter']['host']);
@@ -321,70 +331,6 @@ class CItem extends CZBXAPI{
 				$sql_parts['where']['hi'] = 'h.hostid=i.hostid';
 				$sql_parts['where']['h'] = DBcondition('h.host', $options['filter']['host'], false, true);
 			}
-
-			if(isset($options['filter']['hostid'])){
-				zbx_value2array($options['filter']['hostid']);
-				$sql_parts['where']['hostid'] = DBcondition('i.hostid', $options['filter']['hostid']);
-			}
-
-			if(isset($options['filter']['itemid'])){
-				zbx_value2array($options['filter']['itemid']);
-				$sql_parts['where']['itemid'] = DBcondition('i.itemid', $options['filter']['itemid']);
-			}
-
-			if(isset($options['filter']['description'])){
-				zbx_value2array($options['filter']['description']);
-				$sql_parts['where']['description'] = DBcondition('i.description', $options['filter']['description'], false, true);
-			}
-
-			if(isset($options['filter']['key_'])){
-				zbx_value2array($options['filter']['key_']);
-				$sql_parts['where']['key_'] = DBcondition('i.key_', $options['filter']['key_'], false, true);
-			}
-
-			if(isset($options['filter']['type'])){
-				zbx_value2array($options['filter']['type']);
-				$sql_parts['where']['type'] = DBcondition('i.type', $options['filter']['type']);
-			}
-
-			if(isset($options['filter']['status'])){
-				zbx_value2array($options['filter']['status']);
-				$sql_parts['where']['status'] = DBcondition('i.status', $options['filter']['status']);
-			}
-
-			if(isset($options['filter']['snmp_community']))
-				$sql_parts['where'][] = 'i.snmp_community='.zbx_dbstr($options['filter']['snmp_community']);
-
-			if(isset($options['filter']['snmpv3_securityname']))
-				$sql_parts['where'][] = 'i.snmpv3_securityname='.zbx_dbstr($options['filter']['snmpv3_securityname']);
-
-			if(isset($options['filter']['snmp_oid']))
-				$sql_parts['where'][] = 'i.snmp_oid='.zbx_dbstr($options['filter']['snmp_oid']);
-
-			if(isset($options['filter']['snmp_port']))
-				$sql_parts['where'][] = 'i.snmp_port='.$options['filter']['snmp_port'];
-
-			if(isset($options['filter']['value_type'])){
-				zbx_value2array($options['filter']['value_type']);
-				$sql_parts['where']['value_type'] = DBCondition('i.value_type', $options['filter']['value_type']);
-			}
-
-			if(isset($options['filter']['ipmi_sensor']))
-				$sql_parts['where'][] = 'i.ipmi_sensor='.zbx_dbstr($options['filter']['ipmi_sensor']);
-
-			if(isset($options['filter']['data_type']))
-				$sql_parts['where'][] = 'i.data_type='.$options['filter']['data_type'];
-
-			if(isset($options['filter']['delay'])){
-				zbx_value2array($options['filter']['delay']);
-				$sql_parts['where']['delay'] = DBCondition('i.delay', $options['filter']['delay']);
-			}
-
-			if(isset($options['filter']['trends']))
-				$sql_parts['where'][] = 'i.trends='.$options['filter']['trends'];
-
-			if(isset($options['filter']['history']))
-				$sql_parts['where'][] = 'i.history='.$options['filter']['history'];
 		}
 
 // group
@@ -433,6 +379,12 @@ class CItem extends CZBXAPI{
 				$sql_parts['where'][] = ' EXISTS ( SELECT functionid FROM functions ff WHERE ff.itemid=i.itemid )';
 			else
 				$sql_parts['where'][] = 'NOT EXISTS ( SELECT functionid FROM functions ff WHERE ff.itemid=i.itemid )';
+		}
+
+
+// output
+		if($options['output'] == API_OUTPUT_EXTEND){
+			$sql_parts['select']['items'] = 'i.*';
 		}
 
 // countOutput
@@ -732,7 +684,18 @@ COpt::memoryPick();
 		try{
 			self::BeginTransaction(__METHOD__);
 
+			$dbHosts = CHost::get(array(
+				'output' => API_OUTPUT_SHORTEN,
+				'hostids' => zbx_objectValues($items, 'hostid'),
+				'templated_hosts' => true,
+				'editable' => true,
+				'preservekeys' => true
+			));
+
 			foreach($items as $inum => $item){
+				if(!isset($dbHosts[$item['hostid']]))
+					self::exception(ZBX_API_ERROR_PARAMETERS, S_NO_PERMISSIONS);
+
 				$result = add_item($item);
 
 				if(!$result) self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot create Item');
@@ -786,6 +749,7 @@ COpt::memoryPick();
 				unset($item_db_fields['prevvalue']);
 				unset($item_db_fields['lastclock']);
 				unset($item_db_fields['prevorgvalue']);
+				unset($item_db_fields['lastns']);
 				if(!check_db_fields($item_db_fields, $item)){
 					self::exception(ZBX_API_ERROR_PARAMETERS, 'Incorrect parameters used for Item');
 				}
@@ -816,8 +780,8 @@ COpt::memoryPick();
  */
 	public static function delete($itemids){
 		if(empty($itemids)) return true;
+
 		$itemids = zbx_toArray($itemids);
-		$delete = array();
 		$insert = array();
 
 		try{
@@ -874,10 +838,12 @@ COpt::memoryPick();
 			}
 
 			if(!empty($del_graphs)){
-				$result = delete_graph($del_graphs);
+				$result = CGraph::delete($del_graphs);
 				if(!$result) self::exception(ZBX_API_ERROR_PARAMETERS, 'Cannot delete item');
 			}
-
+//--
+			// check if these items are referenced by any graphs
+			self::checkGraphReference($itemids);
 
 			$itemids_condition = DBcondition('itemid', $itemids);
 
@@ -904,6 +870,7 @@ COpt::memoryPick();
 				'history_str',
 				'history',
 			);
+
 			foreach($itemids as $id => $itemid){
 				foreach($item_data_tables as $table){
 					$insert[] = array(
@@ -916,7 +883,7 @@ COpt::memoryPick();
 			DB::insert('housekeeper', $insert);
 
 			self::EndTransaction(true, __METHOD__);
-			return true;
+			return array('itemids' => $itemids);
 		}
 		catch(APIException $e){
 			self::EndTransaction(false, __METHOD__);
@@ -924,6 +891,83 @@ COpt::memoryPick();
 			$error = reset($error);
 			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
+		}
+	}
+
+
+	/**
+	 * Checks whether the given items are referenced by any graphs and tries to
+	 * unset these references, if they are no longer used.
+	 *
+	 * @throws APIException if at least one of the item can't be deleted
+	 *
+	 * @param array $itemIds   An array of item IDs
+	 */
+	protected static function checkGraphReference(array $itemIds) {
+		self::checkUseInGraphAxis($itemIds, true);
+		self::checkUseInGraphAxis($itemIds);
+	}
+
+
+	/**
+	 * Checks if any of the given items are used as min/max Y values in a graph.
+	 *
+	 * if there are graphs, that have an y*_itemid column set, but the
+	 * y*_type column is not set to GRAPH_YAXIS_TYPE_ITEM_VALUE, the y*_itemid
+	 * column will be set to NULL.
+	 *
+	 * If the $checkMax parameter is set to true, the items will be checked against
+	 * max Y values, otherwise, they will be checked against min Y values.
+	 *
+	 * @throws APIException if any of the given items are used as min/max Y values in a graph.
+	 *
+	 * @param array $itemIds   An array of items IDs
+	 * @param type $checkMax
+	 */
+	protected static function checkUseInGraphAxis(array $itemIds, $checkMax = false) {
+		if ($checkMax) {
+			$filter = array(
+				'ymax_itemid' => $itemIds,
+			);
+			$itemIdColumn = 'ymax_itemid';
+			$typeColumn = 'ymax_type';
+		}
+		else {
+			$filter = array(
+				'ymin_itemid' => $itemIds,
+			);
+			$itemIdColumn = 'ymin_itemid';
+			$typeColumn = 'ymin_type';
+		}
+
+		// check if the items are used in Y axis min/max values in any graphs
+		$graphs = CGraph::get(array(
+			'output' => API_OUTPUT_EXTEND,
+			'filter' => $filter
+		));
+
+		$updateGraphs = array();
+		foreach ($graphs as &$graph) {
+			// check if Y type is actually set to GRAPH_YAXIS_TYPE_ITEM_VALUE
+			if ($graph[$typeColumn] == GRAPH_YAXIS_TYPE_ITEM_VALUE) {
+				if ($checkMax) {
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Could not delete these items because some of them are used as MAX values for graphs.');
+				}
+				else {
+					self::exception(ZBX_API_ERROR_PARAMETERS, 'Could not delete these items because some of them are used as MIN values for graphs.');
+				}
+			}
+			else {
+				$graph[$itemIdColumn] = null;
+				$updateGraphs[] = $graph;
+			}
+		}
+
+		// if there are graphs, that have an y*_itemid column set, but the
+		// y*_type column is not set to GRAPH_YAXIS_TYPE_ITEM_VALUE, set y*_itemid to NULL.
+		// Otherwise we won't be able to delete them.
+		if ($updateGraphs) {
+			CGraph::update($updateGraphs);
 		}
 	}
 }

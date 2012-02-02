@@ -353,8 +353,8 @@ options = array(
 			$def_ptions = array(
 				'nodeids' => $this->config['all_nodes'] ? get_current_nodeid() : null,
 				'output' => API_OUTPUT_EXTEND,
-				'groupids' => ((($this->groupid > 0) && ($this->hostid == 0)) ? $this->groupid : null),
-				'hostids' => (($this->hostid > 0) ? $this->hostid : null),
+				'groupids' => $this->groupid > 0 && $this->hostid == 0 ? $this->groupid : null,
+				'hostids' => $this->hostid > 0 ? $this->hostid : null
 			);
 			$options = zbx_array_merge($def_ptions, $options);
 			$graphs = CGraph::get($options);
@@ -364,9 +364,32 @@ options = array(
 				$this->data['graphs'][$graph['graphid']] = $graph['name'];
 			}
 
-			if(is_null($graphid)) $graphid = $this->_profileIds['graphid'];
+			// no graphid provided
+			if(is_null($graphid)){
+				// if there is one saved in profile, let's take it from there
+				$graphid = is_null($this->_profileIds['graphid'])
+							? 0
+							: $this->_profileIds['graphid'];
+			}
 
-			$graphid = isset($this->data['graphs'][$graphid]) ? $graphid : 0;
+			// if there is no graph with given id in selected host
+			if($graphid > 0 && !isset($this->data['graphs'][$graphid])){
+				// then let's take a look how the desired graph is named
+				$options = array(
+					'output' => API_OUTPUT_EXTEND,
+					'graphids' => array($graphid)
+				);
+				$selectedGraphInfo = CGraph::get($options);
+				$selectedGraphInfo = reset($selectedGraphInfo);
+				$graphid = 0;
+				// if there is a graph with the same name on new host, why not show it then?
+				foreach($this->data['graphs'] as $gid => $graph){
+					if($graph === $selectedGraphInfo['name']){
+						$graphid = $gid;
+						break;
+					}
+				}
+			}
 		}
 
 		if(!is_null($this->_requestIds['graphid'])){
@@ -420,8 +443,24 @@ options = array(
 		return $this->_getCB('groupid', $this->groupid, $this->groups, $withNode);
 	}
 
-	public function getGraphsCB($withNode=false){
-		return $this->_getCB('graphid', $this->graphid, $this->graphs, $withNode);
+	public function getGraphsCB($withNode=false){		
+		$cmb = new CComboBox('graphid', $this->graphid, 'javascript: submit();');
+		$items = $this->graphs;
+
+		if($withNode){
+			foreach($items as $id => $item){
+				$items[$id] = get_node_name_by_elid($id, null, ': ') . $item;
+			}
+		}
+
+		natcasesort($items);
+		$items = array(0 => S_NOT_SELECTED_SMALL) + $items;
+
+		foreach($items as $id => $name){
+			$cmb->addItem($id, $name);
+		}
+
+		return $cmb;
 	}
 
 	public function getTriggerCB($withNode=false){

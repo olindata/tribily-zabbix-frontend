@@ -25,35 +25,6 @@ require_once('include/js.inc.php');
 ?>
 <?php
 
-	function add_screen_item($resourcetype,$screenid,$x,$y,$resourceid,$width,$height,$colspan,$rowspan,$elements,$valign,$halign,$style,$url,$dynamic){
-		$sql='DELETE FROM screens_items WHERE screenid='.$screenid.' and x='.$x.' and y='.$y;
-		DBexecute($sql);
-
-		$screenitemid=get_dbid("screens_items","screenitemid");
-		$result=DBexecute('INSERT INTO screens_items '.
-							'(screenitemid,resourcetype,screenid,x,y,resourceid,width,height,'.
-							' colspan,rowspan,elements,valign,halign,style,url,dynamic) '.
-						' VALUES '.
-							"($screenitemid,$resourcetype,$screenid,$x,$y,$resourceid,$width,$height,$colspan,".
-							"$rowspan,$elements,$valign,$halign,$style,".zbx_dbstr($url).",$dynamic)");
-
-		if(!$result) return $result;
-	return $screenitemid;
-	}
-
-	function update_screen_item($screenitemid,$resourcetype,$resourceid,$width,$height,$colspan,$rowspan,$elements,$valign,$halign,$style,$url,$dynamic){
-		return  DBexecute("UPDATE screens_items SET ".
-							"resourcetype=$resourcetype,"."resourceid=$resourceid,"."width=$width,".
-							"height=$height,colspan=$colspan,rowspan=$rowspan,elements=$elements,".
-							"valign=$valign,halign=$halign,style=$style,url=".zbx_dbstr($url).",dynamic=$dynamic".
-						" WHERE screenitemid=$screenitemid");
-	}
-
-	function delete_screen_item($screenitemid){
-		$sql="DELETE FROM screens_items where screenitemid=$screenitemid";
-	return  DBexecute($sql);
-	}
-
 	function get_screen_by_screenid($screenid){
 		$result = DBselect("select * from screens where screenid=$screenid");
 		$row=DBfetch($result);
@@ -515,7 +486,7 @@ require_once('include/js.inc.php');
 				$item = reset($items);
 				$item['host'] = reset($item['hosts']);
 
-				$caption = item_description($item);
+				$caption = $item['host']['host'].':'.item_description($item);
 
 				$nodeName = get_node_name_by_elid($item['itemid']);
 				if(!zbx_empty($nodeName))
@@ -905,8 +876,10 @@ require_once('include/js.inc.php');
 					$item = get_screen_item_form();
 					$item_form = true;
 				}
-				else if( ($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_GRAPH) ){
-					if($editmode == 0)	$action = 'charts.php?graphid='.$resourceid.url_param('period').url_param('stime');
+				else if(($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_GRAPH)){
+					if($editmode == 0){
+						$action = 'charts.php?graphid='.$resourceid.url_param('period').url_param('stime');
+					}
 
 // GRAPH & ZOOM features
 					$dom_graph_id = 'graph_'.$screenitemid.'_'.$resourceid;
@@ -918,33 +891,66 @@ require_once('include/js.inc.php');
 
 					$graph = get_graph_by_graphid($resourceid);
 
-					if($graph){
-						$graphid = $graph['graphid'];
-						$legend = $graph['show_legend'];
-						$graph3d = $graph['show_3d'];
-					}
+					$graphid = $graph['graphid'];
+					$legend = $graph['show_legend'];
+					$graph3d = $graph['show_3d'];
 //-------------
 
 // Host feature
-					if(($dynamic == SCREEN_DYNAMIC_ITEM) && isset($_REQUEST['hostid']) && ($_REQUEST['hostid']>0)){
+					if(($dynamic == SCREEN_DYNAMIC_ITEM) && isset($_REQUEST['hostid']) && ($_REQUEST['hostid'] > 0)){
+
 						$options = array(
 							'hostids' => $_REQUEST['hostid'],
-							'output' => API_OUTPUT_EXTEND
+							'output' => array('hostid', 'host'),
 						);
 						$hosts = CHost::get($options);
 						$host = reset($hosts);
 
-						$def_items = array();
-						$di_res = get_graphitems_by_graphid($resourceid);
-						while($gitem = DBfetch($di_res)) $def_items[] = $gitem;
+						$options = array(
+							'graphids' => $resourceid,
+							'output' => API_OUTPUT_EXTEND,
+							'select_hosts' => API_OUTPUT_REFER,
+							'select_graph_items' => API_OUTPUT_EXTEND,
+						);
+						$graph = CGraph::get($options);
+						$graph = reset($graph);
 
-						$new_items = get_same_graphitems_for_host($def_items, $_REQUEST['hostid'], false);
+						if(count($graph['hosts']) == 1){
+// if items from one host we change them, or set calculated if not exist on that host
+							if($graph['ymax_type'] == GRAPH_YAXIS_TYPE_ITEM_VALUE && $graph['ymax_itemid']){
+								$new_dinamic = get_same_graphitems_for_host(
+									array(array('itemid' => $graph['ymax_itemid'])),
+									$_REQUEST['hostid'],
+									false // false = don't rise Error if item doesn't exist
+								);
+								$new_dinamic = reset($new_dinamic);
+								if(isset($new_dinamic['itemid']) && $new_dinamic['itemid'] > 0){
+									$graph['ymax_itemid'] = $new_dinamic['itemid'];
+								}
+								else{
+									$graph['ymax_type'] = GRAPH_YAXIS_TYPE_CALCULATED;
+								}
+							}
+							if($graph['ymin_type'] == GRAPH_YAXIS_TYPE_ITEM_VALUE && $graph['ymin_itemid']){
+								$new_dinamic = get_same_graphitems_for_host(
+									array(array('itemid' => $graph['ymin_itemid'])),
+									$_REQUEST['hostid'],
+									false // false = don't rise Error if item doesn't exist
+								);
+								$new_dinamic = reset($new_dinamic);
+								if(isset($new_dinamic['itemid']) && $new_dinamic['itemid'] > 0){
+									$graph['ymin_itemid'] = $new_dinamic['itemid'];
+								}
+								else{
+									$graph['ymin_type'] = GRAPH_YAXIS_TYPE_CALCULATED;
+								}
+							}
+						}
 
-						if(($graph['graphtype']==GRAPH_TYPE_PIE) || ($graph['graphtype']==GRAPH_TYPE_EXPLODED))
-							$url = 'chart7.php';
-						else
-							$url = 'chart3.php';
-//-----
+
+						$url = (($graph['graphtype'] == GRAPH_TYPE_PIE) || ($graph['graphtype'] == GRAPH_TYPE_EXPLODED))
+								? 'chart7.php'
+								: 'chart3.php';
 
 						$url = new Curl($url);
 						foreach($graph as $name => $value){
@@ -953,7 +959,8 @@ require_once('include/js.inc.php');
 							$url->setArgument($name, $value);
 						}
 
-						foreach($new_items as $ginum => $gitem){
+						$new_items = get_same_graphitems_for_host($graph['gitems'], $_REQUEST['hostid'], false);
+						foreach($new_items as $gitem){
 							unset($gitem['gitemid']);
 							unset($gitem['graphid']);
 
@@ -962,17 +969,11 @@ require_once('include/js.inc.php');
 							}
 						}
 
+
 						$url->setArgument('name', $host['host'].': '.$graph['name']);
 						$url = $url->getUrl();
 					}
 //-------------
-
-					if(($graphDims['graphtype'] == GRAPH_TYPE_PIE) || ($graphDims['graphtype'] == GRAPH_TYPE_EXPLODED)){
-						$src = 'chart6.php?graphid='.$resourceid.url_param('stime').'&period='.$effectiveperiod;
-					}
-					else{
-						$src = 'chart2.php?graphid='.$resourceid.url_param('stime').'&period='.$effectiveperiod;
-					}
 
 
 					$objData = array(
@@ -983,7 +984,8 @@ require_once('include/js.inc.php');
 						'loadSBox' => 0,
 						'loadImage' => 1,
 						'loadScroll' => 0,
-						'dynamic' => 0
+						'dynamic' => 0,
+						'periodFixed' => CProfile::get('web.screens.timelinefixed', 1)
 					);
 
 					$default = false;
@@ -1005,7 +1007,6 @@ require_once('include/js.inc.php');
 						$src = $url.'&width='.$width.'&height='.$height.'&legend='.$legend.'&graph3d='.$graph3d.'&period='.$effectiveperiod.url_param('stime');
 
 						$objData['src'] = $src;
-
 					}
 					else{
 						if(($dynamic == SCREEN_SIMPLE_ITEM) || empty($url)){
@@ -1025,7 +1026,6 @@ require_once('include/js.inc.php');
 							}
 
 							$objData['loadSBox'] = 1;
-//							zbx_add_post_js('graph_zoom_init("'.$dom_graph_id.'",'.$stime.','.$effectiveperiod.','.$width.','.$height.', false);');
 						}
 
 						$objData['src'] = $src;
@@ -1067,7 +1067,8 @@ require_once('include/js.inc.php');
 						'loadSBox' => 0,
 						'loadImage' => 1,
 						'loadScroll' => 0,
-						'dynamic' => 0
+						'dynamic' => 0,
+						'periodFixed' => CProfile::get('web.screens.timelinefixed', 1)
 					);
 
 // Host feature
@@ -1122,10 +1123,19 @@ require_once('include/js.inc.php');
 				}
 				else if( ($screenitemid!=0) && ($resourcetype==SCREEN_RESOURCE_MAP) ){
 
-					$image_map = new CImg("map.php?noedit=1&sysmapid=$resourceid"."&width=$width&height=$height");
+					$image_map = new CImg("map.php?noedit=1&sysmapid=$resourceid"."&width=$width&height=$height&curtime=".time());
 
 					if($editmode == 0){
-						$action_map = get_action_map_by_sysmapid($resourceid);
+						$options = array(
+							'sysmapids' => $resourceid,
+							'output' => API_OUTPUT_EXTEND,
+							'select_selements' => API_OUTPUT_EXTEND,
+							'nopermissions' => 1
+						);
+						$sysmaps = CMap::get($options);
+						$sysmap = reset($sysmaps);
+
+						$action_map = getActionMapBySysmap($sysmap);
 						$image_map->setMap($action_map->getName());
 						$item = array($action_map,$image_map);
 					}

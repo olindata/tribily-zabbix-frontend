@@ -63,14 +63,14 @@ function call_ins_macro_menu(ev){
 	return false;
 }
 
-function call_triggerlog_menu(evnt,id,name,ltype,menu_options){
+function call_triggerlog_menu(evnt,id,name, menu_options){
  	var tname = locale['S_CREATE_LOG_TRIGGER'];
 
 	if(typeof(menu_options) != 'undefined'){
 		show_popup_menu(evnt,
 					[
 						[name,null,null,{'outer' : ['pum_oheader'],'inner' : ['pum_iheader']}],
-						[tname, "javascript: openWinCentered('tr_logform.php?sform=1&itemid="+id+"&ltype="+ltype+"','TriggerLog',760,540,'titlebar=no, resizable=yes, scrollbars=yes, dialog=no');",{'outer' : ['pum_o_item'],'inner' : ['pum_i_item']}],
+						[tname, "javascript: openWinCentered('tr_logform.php?sform=1&itemid="+id+"','TriggerLog',760,540,'titlebar=no, resizable=yes, scrollbars=yes, dialog=no');",{'outer' : ['pum_o_item'],'inner' : ['pum_i_item']}],
 						menu_options
 					],240);
 	}
@@ -78,7 +78,7 @@ function call_triggerlog_menu(evnt,id,name,ltype,menu_options){
 		show_popup_menu(evnt,
 					[
 						[name,null,null,{'outer' : ['pum_oheader'],'inner' : ['pum_iheader']}],
-						[tname, "javascript: openWinCentered('tr_logform.php?sform=1&itemid="+id+"&ltype="+ltype+"','ServiceForm',760,540,'titlebar=no, resizable=yes, scrollbars=yes, dialog=no');", {'outer' : ['pum_o_item'],'inner' : ['pum_i_item']}]
+						[tname, "javascript: openWinCentered('tr_logform.php?sform=1&itemid="+id+"','ServiceForm',760,540,'titlebar=no, resizable=yes, scrollbars=yes, dialog=no');", {'outer' : ['pum_o_item'],'inner' : ['pum_i_item']}]
 					],140);
 	}
 return false;
@@ -291,7 +291,9 @@ function swapNodes(n1, n2){
 
 		p1.replaceChild(n2, n1); // new,old
 		if(b){
-			p2.insertBefore(n1, b);	//4to,pered 4em
+// n1 - the node which we insert
+// b - the node before which we insert 
+			p2.insertBefore(n1, b);
 		}
 		else {
 			p2.appendChild(n1);
@@ -308,7 +310,7 @@ function swapNodesNames(n1,n2){
 		id2 = parseInt(id2.replace(reg,"$1"));
 	}
 
-	if(is_number(id1) && is_number(id2)){ 
+	if(is_number(id1) && is_number(id2)){
 		var elm = new Array();
 		elm[0] = document.getElementsByName('expressions['+id1+'][value]')[0];
 		elm[1] = document.getElementsByName('expressions['+id1+'][type]')[0];
@@ -330,17 +332,23 @@ function swapNodesNames(n1,n2){
 return false;
 }
 
-function closeform(page){
-	var msg="";
-	try{
-		msg = (IE)?(document.getElementById('page_msg').innerText):(document.getElementById('page_msg').textContent);
-		opener.location.replace(page+'?msg='+encodeURI(msg));
+function closeForm(page) {
+	try {
+		// set header confirmation message to opener
+		var msg = IE ? document.getElementById('page_msg').innerText : document.getElementById('page_msg').textContent;
+		window.opener.location.replace(page + '?msg=' + encodeURI(msg));
 	}
-	catch(e){
+	catch(e) {
 		zbx_throw(e);
 	}
-	
-self.close();
+
+	if (IE) {
+		// close current popup after 1s, wait when opener window is refreshed (IE7 issue)
+		window.setTimeout(function() {window.self.close()}, 1000);
+	}
+	else {
+		window.self.close();
+	}
 }
 
 function add_keyword(bt_type){
@@ -642,22 +650,22 @@ function create_page_menu(e,id){
 
 	var dbrd_menu = new Array();
 
-//to create a copy of array, but not references!!!!
-//alert(id+' : '+page_menu[id]);
-	for(var i=0; i < page_menu[id].length; i++){
-		if((typeof(page_menu[id][i]) != 'undefined') && !empty(page_menu[id][i]))
+	// to create a copy of array, but not references!!!!
+	for (var i=0; i < page_menu[id].length; i++) {
+		if (typeof(page_menu[id][i]) != 'undefined' && !empty(page_menu[id][i])) {
 			dbrd_menu[i] = page_menu[id][i].clone();
+		}
 	}
 
-	for(var i=0; i < page_submenu[id].length; i++){
-		if((typeof(page_submenu[id][i]) != 'undefined') && !empty(page_submenu[id][i])){
+	for (var i=0; i < page_submenu[id].length; i++) {
+		if (typeof(page_submenu[id][i]) != 'undefined' && !empty(page_submenu[id][i])) {
 			var row = page_submenu[id][i];
-			var menu_row = new Array(row.name,"javascript: rm4favorites('"+row.favobj+"','"+row.favid+"','"+i+"');");
+			var menu_row = new Array(row.name, "javascript: rm4favorites('"+row.favobj+"','"+row.favid+"','"+i+"');");
 			dbrd_menu[dbrd_menu.length-1].push(menu_row);
 		}
 	}
-//alert(page_menu[id]);
-	show_popup_menu(e,dbrd_menu,280);// JavaScript Document
+
+	show_popup_menu(e, dbrd_menu);
 }
 
 //------------------------------------------------------
@@ -671,12 +679,46 @@ function create_mon_trigger_menu(e, args, items){
 	if((args.length > 1) && !is_null(args[1])) tr_menu.push(args[1]);
 	if((args.length > 1) && !is_null(args[2])) tr_menu.push(args[2]);
 
-	tr_menu.push(['Simple graphs',null,null,{'outer' : ['pum_oheader'],'inner' : ['pum_iheader']}]);
+	// getting info about types of items that we have
+	var has_char_items = false;
+	var has_int_items = false;
 
-//	for(var i=0; i < items.length; i++){
+	// checking every item
+	for(var itemid in items){
+		// if no info about type is given
+		if(!isset(itemid, items)) continue;
+		if(!isset('value_type', items[itemid])) continue;
+
+		// 1, 2, 4 - character types
+		if (items[itemid].value_type == '1' || items[itemid].value_type == '2' || items[itemid].value_type == '4'){
+			has_char_items = true;
+		}
+		// 0, 3 - numeric types
+		if (items[itemid].value_type == '0' || items[itemid].value_type == '3'){
+			has_int_items = true;
+		}
+	}
+
+	var history_section_caption = '';
+	// we have chars and numbers, or we have none (probably 'value_type' key was not set)
+	if (has_char_items == has_int_items) {
+		history_section_caption = locale['S_HISTORY_AND_SIMPLE_GRAPHS'];
+	}
+	// we have only character items, so 'history' should be shown
+	else if (has_char_items) {
+		history_section_caption = locale['S_HISTORY'];
+	}
+	// we have only numeric items, so 'simple graphs' should be shown
+	else {
+		history_section_caption = locale['S_SIMPLE_GRAPHS'];
+	}
+
+
+	tr_menu.push([history_section_caption,null,null,{'outer' : ['pum_oheader'],'inner' : ['pum_iheader']}]);
+
+	// for(var i=0; i < items.length; i++){
 	for(var itemid in items){
 		if(!isset(itemid, items)) continue;
-
 		tr_menu.push([items[itemid].description,'history.php?action='+items[itemid].action+'&itemid='+items[itemid].itemid,null]);
 	}
 

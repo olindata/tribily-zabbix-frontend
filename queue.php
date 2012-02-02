@@ -22,7 +22,7 @@
 	require_once 'include/config.inc.php';
 	require_once 'include/items.inc.php';
 
-	$page['title'] = 'S_QUEUE_BIG';
+	$page['title'] = 'S_QUEUE';
 	$page['file'] = 'queue.php';
 	$page['hist_arg'] = array('config');
 
@@ -62,6 +62,7 @@ include_once 'include/page_header.php';
 			ITEM_TYPE_TELNET,
 			ITEM_TYPE_SIMPLE,
 			ITEM_TYPE_INTERNAL,
+			ITEM_TYPE_DB_MONITOR,
 			ITEM_TYPE_AGGREGATE,
 			ITEM_TYPE_EXTERNAL,
 			ITEM_TYPE_CALCULATED);
@@ -77,16 +78,17 @@ include_once 'include/page_header.php';
 	$item_types = array(
 			ITEM_TYPE_ZABBIX,
 			ITEM_TYPE_ZABBIX_ACTIVE,
+			ITEM_TYPE_SIMPLE,
 			ITEM_TYPE_SNMPV1,
 			ITEM_TYPE_SNMPV2C,
 			ITEM_TYPE_SNMPV3,
-			ITEM_TYPE_IPMI,
-			ITEM_TYPE_SSH,
-			ITEM_TYPE_TELNET,
-			ITEM_TYPE_SIMPLE,
 			ITEM_TYPE_INTERNAL,
 			ITEM_TYPE_AGGREGATE,
 			ITEM_TYPE_EXTERNAL,
+			ITEM_TYPE_DB_MONITOR,
+			ITEM_TYPE_IPMI,
+			ITEM_TYPE_SSH,
+			ITEM_TYPE_TELNET,
 			ITEM_TYPE_CALCULATED);
 
 	$sql = 'SELECT i.itemid,i.lastclock,i.description,i.key_,i.type,h.host,h.hostid,h.proxy_hostid,i.delay,i.delay_flex'.
@@ -262,11 +264,11 @@ include_once 'include/page_header.php';
 
 	$queue_wdgt->addItem($table);
 	$queue_wdgt->Show();
-	
+
 	if($_REQUEST["config"]!=0){
 		show_table_header(S_TOTAL.": ".$table->GetNumRows().($truncated ? ' ('.S_TRUNCATED.')' : ''));
 	}
 
-	
+
 include_once "include/page_footer.php";
 ?>

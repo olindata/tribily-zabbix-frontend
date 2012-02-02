@@ -26,7 +26,7 @@ require_once('include/graphs.inc.php');
 $page['file']	= 'history.php';
 $page['title']	= 'S_HISTORY';
 $page['hist_arg'] = array('itemid', 'hostid', 'groupid', 'graphid', 'period', 'dec', 'inc', 'left', 'right', 'stime', 'action');
-$page['scripts'] = array('effects.js','dragdrop.js','class.calendar.js','gtlc.js');
+$page['scripts'] = array('class.calendar.js','gtlc.js');
 
 $page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
@@ -55,7 +55,7 @@ include_once('include/page_header.php');
 		'cmbitemlist'=>	array(T_ZBX_INT, O_OPT,	 null,	DB_ID, null),
 
 		'plaintext'=>	array(T_ZBX_STR, O_OPT,	 null,	null, null),
-		'action'=>		array(T_ZBX_STR, O_OPT,	 null,	IN('"showgraph","showvalues","showlatest","add","remove"'), null),
+		'action'=>		array(T_ZBX_STR, O_OPT,	 P_SYS,	IN('"showgraph","showvalues","showlatest","add","remove"'), null),
 //ajax
 		'favobj'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NULL,			NULL),
 		'favref'=>		array(T_ZBX_STR, O_OPT, P_ACT,	NOT_EMPTY,		NULL),
@@ -71,8 +71,8 @@ include_once('include/page_header.php');
 		'form_refresh'=>	array(T_ZBX_INT, O_OPT,	null,	null,	null),
 		'fullscreen'=>		array(T_ZBX_INT, O_OPT,	P_SYS,	null,	null)
 	);
-
 	check_fields($fields);
+
 ?>
 <?php
 	if(isset($_REQUEST['favobj'])){
@@ -102,6 +102,12 @@ include_once('include/page_header.php');
 
 			if((PAGE_TYPE_JS == $page['type']) && $result){
 				print('switchElementsClass("addrm_fav","iconminus","iconplus");');
+			}
+		}
+		// saving fixed/dynamic setting to profile
+		if('timelinefixedperiod' == $_REQUEST['favobj']){
+			if(isset($_REQUEST['favid'])){
+				CProfile::update('web.history.timelinefixed', $_REQUEST['favid'], PROFILE_TYPE_INT);
 			}
 		}
 	}
@@ -161,7 +167,9 @@ include_once('include/page_header.php');
 // resets get params for proper page refresh
 	if(isset($_REQUEST['period']) || isset($_REQUEST['stime'])){
 		navigation_bar_calc('web.item.graph', $item['itemid'], true);
-		resetGetParams(array('period', 'stime'));
+		jsRedirect('history.php?action=' . get_request('action', 'showgraph') . '&itemid=' . $item['itemid']);
+		include_once('include/page_footer.php');
+		exit();
 	}
 //--
 
@@ -201,7 +209,7 @@ include_once('include/page_header.php');
 	}
 
 	$form = new CForm(null, 'get');
-	$form->addVar('itemid',$_REQUEST['itemid']);
+	$form->addVar('itemid', $_REQUEST['itemid']);
 
 	if(isset($_REQUEST['filter_task']))	$form->addVar('filter_task',$_REQUEST['filter_task']);
 	if(isset($_REQUEST['filter']))		$form->addVar('filter',$_REQUEST['filter']);
@@ -226,7 +234,6 @@ include_once('include/page_header.php');
 	$itemid = $item['itemid'];
 
 	if($_REQUEST['action']=='showvalues' || $_REQUEST['action']=='showlatest'){
-
 // Filter
 		if(isset($iv_string[$item['value_type']])){
 			$filter_task = get_request('filter_task',0);
@@ -301,7 +308,7 @@ include_once('include/page_header.php');
 			$options['limit'] = 500;
 		}
 		else if($_REQUEST['action']=='showvalues'){
-			$options['time_from'] = $time - 10; // some seconds to take script execued
+			$options['time_from'] = $time - 10; // some seconds to allow script to execute
 			$options['time_till'] = $till;
 
 			$options['limit'] = $config['search_limit'];
@@ -310,22 +317,25 @@ include_once('include/page_header.php');
 // TEXT LOG
 		if(isset($iv_string[$item['value_type']])){
 			$logItem = ($item['value_type'] == ITEM_VALUE_TYPE_LOG);
+			// is this an eventlog item? If so, we must show some additional columns
+			$eventLogItem = (strpos($item['key_'], 'eventlog[') === 0);
 
 			$table = new CTableInfo('...');
 			$table->setHeader(array(
-					S_TIMESTAMP,
-					$fewItems?S_ITEM:null,
-					$logItem?S_LOCAL_TIME:null,
-					$logItem?S_SOURCE:null,
-					$logItem?S_SEVERITY:null,
-					$logItem?S_EVENT_ID:null,
-					S_VALUE),'header');
+				S_TIMESTAMP,
+				$fewItems ? S_ITEM : null,
+				$logItem ? S_LOCAL_TIME : null,
+				(($eventLogItem && $logItem) ? S_SOURCE : null),
+				(($eventLogItem && $logItem) ? S_SEVERITY : null),
+				(($eventLogItem && $logItem) ? S_EVENT_ID : null),
+				S_VALUE
+			), 'header');
 
 			if(isset($_REQUEST['filter']) && !zbx_empty($_REQUEST['filter']) && in_array($_REQUEST['filter_task'], array(FILTER_TASK_SHOW, FILTER_TASK_HIDE))){
-				$options['pattern'] = $_REQUEST['filter'];
+				$options['search'] = array('value' => $_REQUEST['filter']);
 
 				if($_REQUEST['filter_task'] == FILTER_TASK_HIDE)
-					$options['excludePattern'] = 1;
+					$options['excludeSearch'] = 1;
 			}
 
 			$options['sortfield'] = 'id';
@@ -338,10 +348,7 @@ include_once('include/page_header.php');
 				$host = reset($item['hosts']);
 
 				if(isset($_REQUEST['filter']) && !zbx_empty($_REQUEST['filter'])){
-					$contain = zbx_stristr($data['value'],$_REQUEST['filter']) ? TRUE : FALSE;
-
-//					if($_REQUEST['filter_task'] == FILTER_TASK_SHOW && !$contain) continue;
-//					if($_REQUEST['filter_task'] == FILTER_TASK_HIDE && $contain) continue;
+					$contain = zbx_stristr($data['value'], $_REQUEST['filter']);
 
 					if(!isset($_REQUEST['mark_color'])) $_REQUEST['mark_color'] = MARK_COLOR_RED;
 
@@ -358,32 +365,27 @@ include_once('include/page_header.php');
 					}
 				}
 
-				$row = array(nbsp(zbx_date2str(S_HISTORY_LOG_ITEM_DATE_FORMAT,$data['clock'])));
+				$row = array(nbsp(zbx_date2str(S_HISTORY_LOG_ITEM_DATE_FORMAT, $data['clock'])));
 
-				if($fewItems) $row[] = $host['host'].':'.item_description($item);
+				if($fewItems)
+					$row[] = $host['host'].':'.item_description($item);
 
 				if($logItem){
-					if($data['timestamp'] == 0) $row[] = new CCol(' - ');
-					else $row[] = zbx_date2str(S_HISTORY_LOG_LOCALTIME_DATE_FORMAT,$data['timestamp']);
+					$row[] = ($data['timestamp'] == 0) ? '-' : zbx_date2str(S_HISTORY_LOG_LOCALTIME_DATE_FORMAT, $data['timestamp']);
 
-					if(zbx_empty($data['source'])) $row[] = new CCol(' - ');
-					else $row[] = $data['source'];
-
-					$row[] = new CCol(get_item_logtype_description($data['severity']),get_item_logtype_style($data['severity']));
-
-					if(zbx_empty($data['source']) && ($data['logeventid'] == '0'))
-						$row[] = new CCol(' - ');
-					else
-						$row[] = $data['logeventid'];
+					// if this is a eventLog item, showing additional info
+					if($eventLogItem){
+						$row[] = zbx_empty($data['source']) ? '-' : $data['source'];
+						$row[] = ($data['severity'] == 0)
+								? '-'
+								: new CCol(get_item_logtype_description($data['severity']), get_item_logtype_style($data['severity']));
+						$row[] = ($data['logeventid'] == 0) ? '-' : $data['logeventid'];
+					}
 				}
 
-				$data['value'] = trim($data['value'],"\r\n");
-				$data['value'] = encode_log($data['value']);
-				
-//				$data['value'] = str_replace(' ', '&nbsp;', $data['value']);
-//				$data['value'] = str_replace("\t", '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;', $data['value']);
-//				$data['value'] = zbx_nl2br($data['value']);
-				array_push($row, new CCol($data['value'], 'pre'));
+				$data['value'] = encode_log(trim($data['value'], "\r\n"));
+				$row[] = new CCol($data['value'], 'pre');
+
 
 				$crow = new CRow($row);
 				if(is_null($color_style)){
@@ -400,7 +402,7 @@ include_once('include/page_header.php');
 
 				$table->addRow($crow);
 
-// Plaint Text
+// Plain Text
 				if(!isset($_REQUEST['plaintext'])) continue;
 
 				$ptData['body'][] = zbx_date2str(S_HISTORY_LOG_ITEM_PLAINTEXT,$data['clock']);
@@ -476,7 +478,9 @@ include_once('include/page_header.php');
 			'usertime' => date('YmdHis', $utime + $period)
 		);
 
-		$objData = array();
+		$objData = array(
+			'periodFixed' => CProfile::get('web.history.timelinefixed', 1)
+		);
 
 		if(isset($dom_graph_id)){
 			$objData['id'] = $_REQUEST['itemid'];

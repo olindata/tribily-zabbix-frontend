@@ -62,6 +62,11 @@
 			header('Content-Type: text/plain; charset=UTF-8');
 			if(!defined('ZBX_PAGE_NO_MENU')) define('ZBX_PAGE_NO_MENU', 1);
 			break;
+		case PAGE_TYPE_TEXT_FILE:
+			header('Content-Type: text/plain; charset=UTF-8');
+			header('Content-Disposition: attachment; filename="'.$page['file'].'"');
+			if(!defined('ZBX_PAGE_NO_MENU')) define('ZBX_PAGE_NO_MENU', 1);
+			break;
 		case PAGE_TYPE_HTML:
 		default:
 			if(!isset($page['encoding']))
@@ -122,14 +127,15 @@
 <![endif]-->
 
 <?php
-	if(isset($DB['DB']) && !is_null($DB['DB'])){
+	if (!empty($DB['DB'])) {
 		$config = select_config();
 
-		$css = getUserTheme($USER_DETAILS);
-		$config=select_config();
-		if($css){
-			print('<link rel="stylesheet" type="text/css" href="styles/'.$css.'" />'."\n");
-			print('<!--[if IE 6]><link rel="stylesheet" type="text/css" href="styles/ie_'.$css.'" /><![endif]-->'."\n");
+		$cssFile = getUserTheme($USER_DETAILS);
+		if ($cssFile) {
+			print('<link rel="stylesheet" type="text/css" href="styles/'.$cssFile.'" />'."\n");
+			if (file_exists('styles/ie_'.$cssFile)) {
+				print('<!--[if IE 6]><link rel="stylesheet" type="text/css" href="styles/ie_'.$cssFile.'" /><![endif]-->'."\n");
+			}
 		}
 	}
 
@@ -141,8 +147,8 @@
 	$path = 'jsLoader.php?ver='.ZABBIX_VERSION.'&lang='.$USER_DETAILS['lang'];
 	print('<script type="text/javascript" src="'.$path.'"></script>'."\n");
 
-	if(isset($page['scripts']) && is_array($page['scripts']) && !empty($page['scripts'])){
-		foreach($page['scripts'] as $id => $script){
+	if (!empty($page['scripts']) && is_array($page['scripts'])) {
+		foreach ($page['scripts'] as $id => $script) {
 			$path .= '&files[]='.$script;
 		}
 		print('<script type="text/javascript" src="'.$path.'"></script>'."\n");
@@ -156,12 +162,13 @@
 	define ('PAGE_HEADER_LOADED', 1);
 
 	if(isset($_REQUEST['print'])){
-		define('ZBX_PAGE_NO_MENU', 1);
-		
+		if(!defined('ZBX_PAGE_NO_MENU'))
+			define('ZBX_PAGE_NO_MENU', 1);
+
 		$req = new CUrl();
 		$req->setArgument('print', null);
-		
-		$link = new CLink(bold('&laquo;'.S_BACK_BIG), $req->getUrl(), 'small_font');
+
+		$link = new CLink(bold('&laquo;'.S_BACK_BIG), $req->getUrl(), 'small_font', null, 'nosid');
 		$link->setAttribute('style','padding-left: 10px;');
 
 		$printview = new CDiv($link,'printless');
@@ -173,11 +180,14 @@
 	if(!defined('ZBX_PAGE_NO_MENU')){
 COpt::compare_files_with_menu($ZBX_MENU);
 
-		$help = new CLink(S_HELP, 'http://tribily.com/documentation/', 'small_font', null, 'nosid');
+		$help = new CLink(S_HELP, 'http://www.zabbix.com/documentation/', 'small_font', null, 'nosid');
 		$help->setTarget('_blank');
-		$support = new CLink(S_GET_SUPPORT, 'http://service.tribily.com/', 'small_font', null, 'nosid');
+		$support = new CLink(S_GET_SUPPORT, 'http://www.zabbix.com/support.php', 'small_font', null, 'nosid');
 		$support->setTarget('_blank');
-		$printview = new CLink(S_PRINT, $_SERVER['REQUEST_URI'].(empty($_GET)?'?':'&').'print=1', 'small_font');
+
+		$req = new CUrl($_SERVER['REQUEST_URI']);
+		$req->setArgument('print', 1);
+		$printview = new CLink(S_PRINT, $req->getUrl(), 'small_font', null, 'nosid');
 
 		$page_header_r_col = array($help,'|',$support,'|',$printview);
 
@@ -391,7 +401,7 @@ COpt::compare_files_with_menu($ZBX_MENU);
 			$search_div = new CDiv($search_form);
 			$search_div->setAttribute('id','zbx_search');
 			$search_div->setAttribute('class','zbx_search');
-			
+
 			zbx_add_post_js("var sid = createSuggest('search');");
 		}
 

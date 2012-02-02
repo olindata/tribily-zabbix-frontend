@@ -53,14 +53,13 @@ class CProxy extends CZBXAPI{
 
 		$result = array();
 		$user_type = $USER_DETAILS['type'];
-		$userid = $USER_DETAILS['userid'];
 
-		$sort_columns = array('hostid', 'host', 'status', 'dns', 'ip'); // allowed columns for sorting
+		$sort_columns = array('hostid', 'host', 'status'); // allowed columns for sorting
 		$subselects_allowed_outputs = array(API_OUTPUT_REFER, API_OUTPUT_EXTEND); // allowed output options for [ select_* ] params
 
 
 		$sql_parts = array(
-			'select' => array('hosts' => 'h.hostid'),
+			'select' => array('hostid' => 'h.hostid'),
 			'from' => array('hosts' => 'hosts h'),
 			'where' => array('h.status IN ('.HOST_STATUS_PROXY_ACTIVE.','.HOST_STATUS_PROXY_PASSIVE.')'),
 			'order' => array(),
@@ -72,13 +71,18 @@ class CProxy extends CZBXAPI{
 			'editable'					=> null,
 			'nopermissions'				=> null,
 // filter
-			'pattern'					=> '',
+			'filter'					=> null,
+			'search'					=> null,
+			'startSearch'				=> null,
+			'excludeSearch'				=> null,
+			'searchWildcardsEnabled'	=> null,
+
 // OutPut
 			'extendoutput'				=> null,
 			'output'					=> API_OUTPUT_REFER,
-			'count'						=> null,
+			'countOutput'				=> null,
 			'preservekeys'				=> null,
-			
+
 			'select_hosts'				=> null,
 
 			'sortfield'					=> '',
@@ -112,21 +116,30 @@ class CProxy extends CZBXAPI{
 			$sql_parts['where'][] = DBcondition('h.hostid', $options['proxyids']);
 		}
 
-// extendoutput
-		if($options['output'] == API_OUTPUT_EXTEND){
-			$sql_parts['select']['hosts'] = 'h.*';
+// filter
+		if(is_array($options['filter'])){
+			zbx_db_filter('hosts h', $options, $sql_parts);
 		}
 
-// count
-		if(!is_null($options['count'])){
+// search
+		if(is_array($options['search'])){
+			zbx_db_search('hosts h', $options, $sql_parts);
+		}
+
+
+// extendoutput
+		if($options['output'] == API_OUTPUT_EXTEND){
+			$sql_parts['select']['hostid'] = 'h.hostid';
+			$sql_parts['select']['host'] = 'h.host';
+			$sql_parts['select']['status'] = 'h.status';
+			$sql_parts['select']['lastaccess'] = 'h.lastaccess';
+		}
+
+// countOutput
+		if(!is_null($options['countOutput'])){
 			$options['sortfield'] = '';
 
 			$sql_parts['select'] = array('count(DISTINCT h.hostid) as rowscount');
-		}
-
-// pattern
-		if(!zbx_empty($options['pattern'])){
-			$sql_parts['where'][] = ' UPPER(h.host) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
 		}
 
 // order
@@ -136,7 +149,6 @@ class CProxy extends CZBXAPI{
 			$sortorder = ($options['sortorder'] == ZBX_SORT_DOWN)?ZBX_SORT_DOWN:ZBX_SORT_UP;
 
 			$sql_parts['order'][] = 'h.'.$options['sortfield'].' '.$sortorder;
-
 			if(!str_in_array('h.'.$options['sortfield'], $sql_parts['select']) && !str_in_array('h.*', $sql_parts['select'])){
 				$sql_parts['select'][] = 'h.'.$options['sortfield'];
 			}
@@ -173,8 +185,9 @@ class CProxy extends CZBXAPI{
 // sdi($sql);
 		$res = DBselect($sql, $sql_limit);
 		while($proxy = DBfetch($res)){
-			if($options['count'])
-				$result = $proxy;
+			if($options['countOutput']){
+				$result = $proxy['rowscount'];
+			}
 			else{
 				$proxyids[$proxy['hostid']] = $proxy['hostid'];
 
@@ -186,7 +199,7 @@ class CProxy extends CZBXAPI{
 				}
 				else{
 					if(!isset($result[$proxy['proxyid']])) $result[$proxy['proxyid']]= array();
-					
+
 					if(!is_null($options['select_hosts']) && !isset($result[$proxy['proxyid']]['hosts'])){
 						$result[$proxy['proxyid']]['hosts'] = array();
 					}
@@ -196,7 +209,7 @@ class CProxy extends CZBXAPI{
 			}
 		}
 
-		if(($options['output'] != API_OUTPUT_EXTEND) || !is_null($options['count'])){
+		if(!is_null($options['countOutput'])){
 			if(is_null($options['preservekeys'])) $result = zbx_cleanHashes($result);
 			return $result;
 		}
@@ -227,6 +240,6 @@ class CProxy extends CZBXAPI{
 
 	return $result;
 	}
-	
+
 }
 ?>

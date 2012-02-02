@@ -75,10 +75,14 @@ class CUser extends CZBXAPI{
 			'userids'					=> null,
 			'mediaids'					=> null,
 			'mediatypeids'				=> null,
-			'users' 					=> null,
-			'type'						=> null,
+
 // filter
-			'pattern'					=> '',
+			'filter'					=> null,
+			'search'					=> null,
+			'startSearch'				=> null,
+			'excludeSearch'				=> null,
+			'searchWildcardsEnabled'	=> null,
+
 // OutPut
 			'extendoutput'				=> null,
 			'output'					=> API_OUTPUT_REFER,
@@ -87,7 +91,7 @@ class CUser extends CZBXAPI{
 			'select_medias'				=> null,
 			'select_mediatypes'			=> null,
 			'get_access'				=> null,
-			'count'						=> null,
+			'countOutput'				=> null,
 			'preservekeys'				=> null,
 
 			'sortfield'					=> '',
@@ -166,33 +170,27 @@ class CUser extends CZBXAPI{
 			$sql_parts['where']['mu'] = 'm.userid=u.userid';
 		}
 
-// users
-		if(!is_null($options['users'])){
-			zbx_value2array($options['users']);
-			$sql_parts['where'][] = DBcondition('u.alias', $options['users'], false, true);
-		}
-
-// type
-		if(!is_null($options['type'])){
-			$sql_parts['where'][] = 'u.type='.$options['type'];
-		}
-
-
 // extendoutput
 		if($options['output'] == API_OUTPUT_EXTEND){
 			$sql_parts['select']['users'] = 'u.*';
 		}
 
-// count
-		if(!is_null($options['count'])){
+// countOutput
+		if(!is_null($options['countOutput'])){
 			$options['sortfield'] = '';
 
 			$sql_parts['select'] = array('count(u.userid) as rowscount');
 		}
 
-// pattern
-		if(!zbx_empty($options['pattern'])){
-			$sql_parts['where'][] = ' UPPER(u.alias) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
+// filter
+		if(is_array($options['filter'])){
+			zbx_db_filter('users u', $options, $sql_parts);
+		}
+
+// search
+		if(is_array($options['search'])){
+			unset($options['search']['passwd']);
+			zbx_db_search('users u', $options, $sql_parts);
 		}
 
 // order
@@ -238,8 +236,8 @@ class CUser extends CZBXAPI{
 //SDI($sql);
 		$res = DBselect($sql, $sql_limit);
 		while($user = DBfetch($res)){
-			if(!is_null($options['count'])){
-				$result = $user;
+			if(!is_null($options['countOutput'])){
+				$result = $user['rowscount'];
 			}
 			else{
 				$userids[$user['userid']] = $user['userid'];
@@ -286,9 +284,8 @@ class CUser extends CZBXAPI{
 		}
 
 Copt::memoryPick();
-		if(($options['output'] != API_OUTPUT_EXTEND) || !is_null($options['count'])){
+		if(!is_null($options['countOutput'])){
 			if(is_null($options['preservekeys'])) $result = zbx_cleanHashes($result);
-
 			return $result;
 		}
 
@@ -352,7 +349,7 @@ Copt::memoryPick();
  * @since 1.8
  * @version 1
  *
- * @param _array $user_data
+ * @param array $user_data
  * @param array $user_data['alias'] User alias
  * @return string|boolean
  */
@@ -552,7 +549,7 @@ Copt::memoryPick();
 
 		$options = array(
 			'userids' => zbx_objectValues($users, 'userid'),
-			'extendoutput' => 1,
+			'output' => API_OUTPUT_EXTEND,
 			'preservekeys' => 1
 		);
 		$upd_users = self::get($options);
@@ -643,10 +640,12 @@ Copt::memoryPick();
 			if($result && isset($user['usrgrps']) && !is_null($user['usrgrps'])){
 				DBexecute('DELETE FROM users_groups WHERE userid='.$user['userid']);
 
-				$usrgrps = CUserGroup::get(array(
+				$options = array(
 					'usrgrpids' => zbx_objectValues($user['usrgrps'], 'usrgrpid'),
-					'extendoutput' => 1,
-					'preservekeys' => 1));
+					'output' => API_OUTPUT_EXTEND,
+					'preservekeys' => 1
+				);
+				$usrgrps = CUserGroup::get($options);
 
 				foreach($usrgrps as $groupid => $group){
 					if(!$result) break;
@@ -734,7 +733,7 @@ Copt::memoryPick();
 		$options = array(
 			'nodeids' => id2nodeid($USER_DETAILS['userid']),
 			'userids' => $USER_DETAILS['userid'],
-			'extendoutput' => 1,
+			'output' => API_OUTPUT_EXTEND,
 			'preservekeys' => 1
 		);
 		$upd_users = self::get($options);
@@ -821,8 +820,8 @@ Copt::memoryPick();
 		$result = true;
 
 		$options = array(
-			'userids'=>zbx_objectValues($users, 'userid'),
-			'extendoutput'=>1,
+			'userids'=> zbx_objectValues($users, 'userid'),
+			'output'=> API_OUTPUT_EXTEND,
 			'preservekeys'=>1
 		);
 		$del_users = self::get($options);
@@ -888,33 +887,37 @@ Copt::memoryPick();
 		$medias = zbx_toArray($media_data['medias']);
 		$users = zbx_toArray($media_data['users']);
 
+		$userids = array();
+
 		if($USER_DETAILS['type'] < USER_TYPE_ZABBIX_ADMIN){
 			self::setError(__METHOD__, ZBX_API_ERROR_PERMISSIONS, S_CUSER_ERROR_ONLY_ADMIN_CAN_ADD_USER_MEDIAS);
 			return false;
 		}
 
 		foreach($users as $unum => $user){
+			$userids[] = $user['userid'];
+
 			foreach($medias as $mnum => $media){
-					if(!validate_period($media['period'])){
-						self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, S_CUSER_ERROR_INCORRECT_TIME_PERIOD);
-						return false;
-					}
+				if(!validate_period($media['period'])){
+					self::setError(__METHOD__, ZBX_API_ERROR_PARAMETERS, S_CUSER_ERROR_INCORRECT_TIME_PERIOD);
+					return false;
+				}
 
-					$mediaid = get_dbid('media','mediaid');
+				$mediaid = get_dbid('media','mediaid');
 
-					$sql='INSERT INTO media (mediaid,userid,mediatypeid,sendto,active,severity,period) '.
-							' VALUES ('.$mediaid.','.$user['userid'].','.$media['mediatypeid'].','.
-										zbx_dbstr($media['sendto']).','.$media['active'].','.$media['severity'].','.
-										zbx_dbstr($media['period']).')';
+				$sql='INSERT INTO media (mediaid,userid,mediatypeid,sendto,active,severity,period) '.
+						' VALUES ('.$mediaid.','.$user['userid'].','.$media['mediatypeid'].','.
+									zbx_dbstr($media['sendto']).','.$media['active'].','.$media['severity'].','.
+									zbx_dbstr($media['period']).')';
 
-					$result = DBexecute($sql);
+				$result = DBexecute($sql);
 
 				if(!$result) break 2;
 			}
 		}
 
 		if($result){
-			return $medias;
+			return array('userids'=>$userids);
 		}
 		else{
 			self::$error[] = array('error' => ZBX_API_ERROR_INTERNAL, 'data' => S_CUSER_ERROR_INTERNAL_ZABBIX_ERROR);
@@ -950,7 +953,7 @@ Copt::memoryPick();
 		$result = DBexecute($sql);
 
 		if($result){
-			return true;
+			return array('mediaids'=>$mediaids);
 		}
 		else{
 			self::$error[] = array('error' => ZBX_API_ERROR_INTERNAL, 'data' => S_CUSER_ERROR_INTERNAL_ZABBIX_ERROR);
@@ -981,16 +984,11 @@ Copt::memoryPick();
 	public static function updateMedia($media_data){
 		global $USER_DETAILS;
 
-		$errors = array();
-
-		$result = false;
-		$transaction = false;
-
 		$new_medias = zbx_toArray($media_data['medias']);
 		$users = zbx_toArray($media_data['users']);
 
 		try{
-			$transaction = self::BeginTransaction(__METHOD__);
+			self::BeginTransaction(__METHOD__);
 
 			if($USER_DETAILS['type'] < USER_TYPE_ZABBIX_ADMIN){
 				self::setError(__METHOD__, ZBX_API_ERROR_PERMISSIONS, S_CUSER_ERROR_ONLY_ADMIN_CAN_CHANGE_USER_MEDIAS);
@@ -1001,7 +999,9 @@ Copt::memoryPick();
 			$del_medias = array();
 
 			$userids = zbx_objectValues($users, 'userid');
-			$sql = 'SELECT m.mediaid FROM media m WHERE '.DBcondition('userid', $userids);
+			$sql = 'SELECT m.mediaid '.
+					' FROM media m '.
+					' WHERE '.DBcondition('userid', $userids);
 			$result = DBselect($sql);
 			while($media = DBfetch($result)){
 				$del_medias[$media['mediaid']] = $media;
@@ -1053,163 +1053,35 @@ Copt::memoryPick();
 				}
 			}
 
-			$result = self::EndTransaction($result, __METHOD__);
+			self::EndTransaction(true, __METHOD__);
+			return array('userids'=>$userids);
 		}
 		catch(APIException $e){
-			if($transaction) self::EndTransaction(false, __METHOD__);
+			self::EndTransaction(false, __METHOD__);
 
 			$error = $e->getErrors();
 			$error = reset($error);
 			self::setError(__METHOD__, $e->getCode(), $error);
 			return false;
 		}
-
-	return true;
 	}
 
 // ******************************************************************************
 //  LOGIN Methods
 // ******************************************************************************
 
-/**
- * Authenticate user
- *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
- * @param _array $user
- * @param array $user['user'] User alias
- * @param array $user['password'] User password
- * @return string session ID
- */
-	public static function authenticate($user){
+	public static function login($user){
 		$config = select_config();
 		$user['auth_type'] = $config['authentication_type'];
 
-		$login = self::login($user);
-
-		if($login){
-			self::checkAuthentication($login);
-			return $login;
+		$sessionid = self::authenticate($user);
+		if(($sessionid !== false) && self::checkAuthentication(array('sessionid' => $sessionid))){
+			return $sessionid;
 		}
 		else{
 			self::$error[] = array('error' => ZBX_API_ERROR_PARAMETERS, 'data' => $_REQUEST['message']);
 			return false;
 		}
-	}
-
-	public static function login($user){
-		global $USER_DETAILS, $ZBX_LOCALNODEID;
-
-		$name = $user['user'];
-		$passwd = $user['password'];
-		$auth_type = $user['auth_type'];
-
-		if(isset($user['overrideHashing']))
-			$password = $passwd;
-		else
-			$password = md5($passwd);
-
-		$sql = 'SELECT u.userid,u.attempt_failed, u.attempt_clock, u.attempt_ip '.
-				' FROM users u '.
-				' WHERE u.alias='.zbx_dbstr($name);
-
-//SQL to BLOCK attempts
-//					.' AND ( attempt_failed<'.ZBX_LOGIN_ATTEMPTS.
-//							' OR (attempt_failed>'.(ZBX_LOGIN_ATTEMPTS-1).
-//									' AND ('.time().'-attempt_clock)>'.ZBX_LOGIN_BLOCK.'))';
-
-		$login = $attempt = DBfetch(DBselect($sql));
-
-		if($login){
-			if($login['attempt_failed'] >= ZBX_LOGIN_ATTEMPTS){
-				if((time() - $login['attempt_clock']) < ZBX_LOGIN_BLOCK){
-					$_REQUEST['message'] = S_CUSER_ERROR_ACCOUNT_IS_BLOCKED_FOR_XX_SECONDS_FIRST_PART.' '.(ZBX_LOGIN_BLOCK - (time() - $login['attempt_clock'])).' '.S_CUSER_ERROR_ACCOUNT_IS_BLOCKED_FOR_XX_SECONDS_SECOND_PART;
-					return false;
-				}
-				else{
-					DBexecute('UPDATE users SET attempt_clock='.time().' WHERE alias='.zbx_dbstr($name));
-				}
-			}
-
-			if($auth_type != ZBX_AUTH_HTTP){
-				switch(get_user_auth($login['userid'])){
-					case GROUP_GUI_ACCESS_INTERNAL:
-						$auth_type = ZBX_AUTH_INTERNAL;
-						break;
-					case GROUP_GUI_ACCESS_SYSTEM:
-					case GROUP_GUI_ACCESS_DISABLED:
-					default:
-						break;
-				}
-			}
-
-			switch($auth_type){
-				case ZBX_AUTH_LDAP:
-					$login = self::ldapLogin($user);
-					break;
-				case ZBX_AUTH_HTTP:
-					$login = true;
-					break;
-				case ZBX_AUTH_INTERNAL:
-				default:
-					$alt_auth = ZBX_AUTH_INTERNAL;
-					$login = true;
-			}
-		}
-
-		if($login){
-			$sql = 'SELECT u.* '.
-					' FROM users u'.
-					' WHERE u.alias='.zbx_dbstr($name).
-						((ZBX_AUTH_INTERNAL==$auth_type)? ' AND u.passwd='.zbx_dbstr($password):'').
-						' AND '.DBin_node('u.userid', $ZBX_LOCALNODEID);
-
-			$login = $user = DBfetch(DBselect($sql));
-		}
-
-/* update internal pass if it's different
-	if($login && ($row['passwd']!=$password) && (ZBX_AUTH_INTERNAL!=$auth_type)){
-		DBexecute('UPDATE users SET passwd='.zbx_dbstr(md5($password)).' WHERE userid='.$row['userid']);
-	}
-*/
-		if($login){
-			$login = (check_perm2login($user['userid']) && check_perm2system($user['userid']));
-		}
-
-		if($login){
-			$sessionid = zbx_session_start($user['userid'], $name, $password);
-
-			add_audit(AUDIT_ACTION_LOGIN,AUDIT_RESOURCE_USER, 'Correct login ['.$name.']');
-			if(empty($user['url'])){
-				$user['url'] = CProfile::get('web.menu.view.last','index.php');
-			}
-
-			$USER_DETAILS = $user;
-			$login = $sessionid;
-		}
-		else{
-			$user = NULL;
-
-			$_REQUEST['message'] = S_CUSER_ERROR_LOGIN_OR_PASSWORD_INCORRECT;
-			add_audit(AUDIT_ACTION_LOGIN,AUDIT_RESOURCE_USER,'Login failed ['.$name.']');
-
-			if($attempt){
-				$ip = (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && !empty($_SERVER['HTTP_X_FORWARDED_FOR']))?$_SERVER['HTTP_X_FORWARDED_FOR']:$_SERVER['REMOTE_ADDR'];
-				$attempt['attempt_failed']++;
-				$sql = 'UPDATE users '.
-						' SET attempt_failed='.$attempt['attempt_failed'].','.
-							' attempt_clock='.time().','.
-							' attempt_ip='.zbx_dbstr($ip).
-						' WHERE userid='.$attempt['userid'];
-				DBexecute($sql);
-			}
-		}
-
-	return $login;
 	}
 
 	public static function ldapLogin($user){
@@ -1257,6 +1129,131 @@ Copt::memoryPick();
 
 	return true;
 	}
+/**
+ * Authenticate user
+ *
+ * {@source}
+ * @access public
+ * @static
+ * @since 1.8
+ * @version 1
+ *
+ * @param _array $user
+ * @param array $user['user'] User alias
+ * @param array $user['password'] User password
+ * @return string session ID
+ */
+	public static function authenticate($user){
+		global $USER_DETAILS, $ZBX_LOCALNODEID;
+
+		$name = $user['user'];
+		$passwd = $user['password'];
+		$auth_type = $user['auth_type'];
+
+		$password = md5($passwd);
+
+		$sql = 'SELECT u.userid,u.attempt_failed, u.attempt_clock, u.attempt_ip '.
+				' FROM users u '.
+				' WHERE u.alias='.zbx_dbstr($name);
+
+//SQL to BLOCK attempts
+//					.' AND ( attempt_failed<'.ZBX_LOGIN_ATTEMPTS.
+//							' OR (attempt_failed>'.(ZBX_LOGIN_ATTEMPTS-1).
+//									' AND ('.time().'-attempt_clock)>'.ZBX_LOGIN_BLOCK.'))';
+
+		$login = $attempt = DBfetch(DBselect($sql));
+
+		if($login){
+			if($login['attempt_failed'] >= ZBX_LOGIN_ATTEMPTS){
+				if((time() - $login['attempt_clock']) < ZBX_LOGIN_BLOCK){
+					$_REQUEST['message'] = S_CUSER_ERROR_ACCOUNT_IS_BLOCKED_FOR_XX_SECONDS_FIRST_PART.' '.(ZBX_LOGIN_BLOCK - (time() - $login['attempt_clock'])).' '.S_CUSER_ERROR_ACCOUNT_IS_BLOCKED_FOR_XX_SECONDS_SECOND_PART;
+					return false;
+				}
+				else{
+					DBexecute('UPDATE users SET attempt_clock='.time().' WHERE alias='.zbx_dbstr($name));
+				}
+			}
+
+			if($auth_type != ZBX_AUTH_HTTP){
+				switch(get_user_auth($login['userid'])){
+					case GROUP_GUI_ACCESS_INTERNAL:
+						$auth_type = ZBX_AUTH_INTERNAL;
+						break;
+					case GROUP_GUI_ACCESS_SYSTEM:
+					case GROUP_GUI_ACCESS_DISABLED:
+					default:
+						break;
+				}
+			}
+
+			switch($auth_type){
+				case ZBX_AUTH_LDAP:
+					$login = self::ldapLogin($user);
+					break;
+				case ZBX_AUTH_HTTP:
+					$login = true;
+					break;
+				case ZBX_AUTH_INTERNAL:
+				default:
+					$login = true;
+			}
+		}
+
+		if($login){
+			$sql = 'SELECT u.* '.
+					' FROM users u'.
+					' WHERE u.alias='.zbx_dbstr($name).
+						((ZBX_AUTH_INTERNAL==$auth_type)? ' AND u.passwd='.zbx_dbstr($password):'').
+						' AND '.DBin_node('u.userid', $ZBX_LOCALNODEID);
+
+			$login = $user = DBfetch(DBselect($sql));
+		}
+
+/* update internal pass if it's different
+	if($login && ($row['passwd']!=$password) && (ZBX_AUTH_INTERNAL!=$auth_type)){
+		DBexecute('UPDATE users SET passwd='.zbx_dbstr(md5($password)).' WHERE userid='.$row['userid']);
+	}
+*/
+		if($login){
+			$login = (check_perm2login($user['userid']) && check_perm2system($user['userid']));
+		}
+
+		if($login){
+			$sessionid = zbx_session_start($user['userid'], $name, $password);
+
+			// we assign $USER_DETAILS first time, so that it could be used in Cprofile::get
+			$USER_DETAILS = $user;
+
+			add_audit(AUDIT_ACTION_LOGIN,AUDIT_RESOURCE_USER, 'Correct login ['.$name.']');
+			if(empty($user['url'])){
+				$user['url'] = CProfile::get('web.menu.view.last','index.php');
+
+				// we assign $USER_DETAILS second time, to update 'url'
+				$USER_DETAILS['url'] = $user['url'];
+			}
+
+			$login = $sessionid;
+		}
+		else{
+			$user = NULL;
+
+			$_REQUEST['message'] = S_CUSER_ERROR_LOGIN_OR_PASSWORD_INCORRECT;
+			add_audit(AUDIT_ACTION_LOGIN,AUDIT_RESOURCE_USER,'Login failed ['.$name.']');
+
+			if($attempt){
+				$ip = (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && !empty($_SERVER['HTTP_X_FORWARDED_FOR']))?$_SERVER['HTTP_X_FORWARDED_FOR']:$_SERVER['REMOTE_ADDR'];
+				$attempt['attempt_failed']++;
+				$sql = 'UPDATE users '.
+						' SET attempt_failed='.$attempt['attempt_failed'].','.
+							' attempt_clock='.time().','.
+							' attempt_ip='.zbx_dbstr($ip).
+						' WHERE userid='.$attempt['userid'];
+				DBexecute($sql);
+			}
+		}
+
+	return $login;
+	}
 
 /**
  * Check if session ID is authenticated
@@ -1271,7 +1268,6 @@ Copt::memoryPick();
  * @return boolean
  */
 	public static function simpleAuth($sessionid){
-		global	$PHP_AUTH_USER,$PHP_AUTH_PW;
 		global	$USER_DETAILS;
 		global	$ZBX_LOCALNODEID;
 		global	$ZBX_NODES;
@@ -1327,8 +1323,6 @@ Copt::memoryPick();
  * @return boolean
  */
 	public static function checkAuthentication($user=null){
-		global	$page;
-		global	$PHP_AUTH_USER,$PHP_AUTH_PW;
 		global	$USER_DETAILS;
 		global	$ZBX_LOCALNODEID;
 		global	$ZBX_NODES;
@@ -1434,212 +1428,6 @@ Copt::memoryPick();
 		}
 
 	return true;
-	}
-
-/**
- * Get Users media - Tribily Mod :)
- *
- * {@source}
- * @access public
- * @static
- * @since 1.8
- * @version 1
- *
- * @param _array $options
- * @param array $options['nodeids'] filter by Node IDs
- * @param array $options['mediaids'] filter by Media IDs
- * @param array $options['userids'] filter by User IDs
- * @param array $options['sendto'] filter by Send To
- * @param boolean $options['mediatypeid'] filter by Media type [ Email: 1, Jabber: 2, SMS: 3 ]
- * @param boolean $options['extendoutput'] output only User IDs if not set.
- * @param boolean $options['count'] output only count of objects in result. ( result returned in property 'rowscount' )
- * @param string $options['pattern'] filter by Send To value containing only give pattern
- * @param int $options['limit'] output will be limited to given number
- * @param string $options['sortfield'] output will be sorted by given property [ 'userid', 'mediaid' ]
- * @param string $options['sortorder'] output will be sorted in given order [ 'ASC', 'DESC' ]
- * @return array
- */
-	public static function getMedia($options=array()){
-		global $USER_DETAILS;
-
-		$result = array();
-		$user_type = $USER_DETAILS['type'];
-		$userid = $USER_DETAILS['userid'];
-
-		$sort_columns = array('userid', 'mediaid'); // allowed columns for sorting
-		$subselects_allowed_outputs = array(API_OUTPUT_REFER, API_OUTPUT_EXTEND); // allowed output options for [ select_* ] params
-
-
-		$sql_parts = array(
-			'select' => array('media' => 'u.mediaid'),
-			'from' => array('media u'),
-			'where' => array(),
-			'order' => array(),
-			'limit' => null);
-
-		$def_options = array(
-			'nodeids'					=> null,
-                        'mediaids'                                      => null,
-			'userids'					=> null,
-			'sendto' 					=> null,
-			'mediatypeid'					=> null,
-// filter
-			'pattern'					=> '',
-// OutPut
-			'extendoutput'				=> null,
-			'output'					=> API_OUTPUT_REFER,
-			'editable'					=> null,
-			'count'						=> null,
-			'preservekeys'				=> null,
-
-			'sortfield'					=> '',
-			'sortorder'					=> '',
-			'limit'						=> null
-		);
-
-		$options = zbx_array_merge($def_options, $options);
-
-
-		if(!is_null($options['extendoutput'])){
-
-			$options['output'] = API_OUTPUT_EXTEND;
-
-		}
-
-
-// PERMISSION CHECK
-		if(USER_TYPE_SUPER_ADMIN == $user_type){
-
-		}
-		else if(is_null($options['editable']) && ($USER_DETAILS['type'] == USER_TYPE_ZABBIX_ADMIN)){
-			$sql_parts['from']['ug'] = 'users_groups ug';
-			$sql_parts['where']['uug'] = 'u.userid=ug.userid';
-			$sql_parts['where'][] = 'ug.usrgrpid IN ('.
-				' SELECT uug.usrgrpid'.
-				' FROM users_groups uug'.
-				' WHERE uug.userid='.$USER_DETAILS['userid'].
-				' )';
-		}
-		else if(!is_null($options['editable']) && ($USER_DETAILS['type']!=USER_TYPE_SUPER_ADMIN)){
-			return array();
-		}
-
-// nodeids
-		$nodeids = !is_null($options['nodeids']) ? $options['nodeids'] : get_current_nodeid(false);
-
-// mediaids
-		if(!is_null($options['mediaids'])){
-			zbx_value2array($options['mediaids']);
-			$sql_parts['where'][] = DBcondition('u.mediaid', $options['mediaids']);
-		}
-
-// userids
-		if(!is_null($options['userids'])){
-			zbx_value2array($options['userids']);
-			$sql_parts['where'][] = DBcondition('u.userid', $options['userids']);
-		}
-
-// sendto
-		if(!is_null($options['sendto'])){
-			zbx_value2array($options['sendto']);
-			$sql_parts['where'][] = DBcondition('u.sendto', $options['sendto'], false, true);
-		}
-
-// mediatypeid
-		if(!is_null($options['mediatypeid'])){
-			$sql_parts['where'][] = 'u.mediatypeid='.$options['mediatypeid'];
-		}
-
-
-// extendoutput
-		if($options['output'] == API_OUTPUT_EXTEND){
-			$sql_parts['select']['media'] = 'u.*';
-		}
-
-// count
-		if(!is_null($options['count'])){
-			$options['sortfield'] = '';
-
-			$sql_parts['select'] = array('count(u.mediaid) as rowscount');
-		}
-
-// pattern
-		if(!zbx_empty($options['pattern'])){
-			$sql_parts['where'][] = ' UPPER(u.sendto) LIKE '.zbx_dbstr('%'.zbx_strtoupper($options['pattern']).'%');
-		}
-
-// order
-// restrict not allowed columns for sorting
-		$options['sortfield'] = str_in_array($options['sortfield'], $sort_columns) ? $options['sortfield'] : '';
-		if(!zbx_empty($options['sortfield'])){
-			$sortorder = ($options['sortorder'] == ZBX_SORT_DOWN)?ZBX_SORT_DOWN:ZBX_SORT_UP;
-
-			$sql_parts['order'][] = 'u.'.$options['sortfield'].' '.$sortorder;
-
-			if(!str_in_array('u.'.$options['sortfield'], $sql_parts['select']) && !str_in_array('u.*', $sql_parts['select'])){
-				$sql_parts['select'][] = 'u.'.$options['sortfield'];
-			}
-		}
-
-// limit
-		if(zbx_ctype_digit($options['limit']) && $options['limit']){
-			$sql_parts['limit'] = $options['limit'];
-		}
-//-------
-		$mediaids = array();
-
-		$sql_parts['select'] = array_unique($sql_parts['select']);
-		$sql_parts['from'] = array_unique($sql_parts['from']);
-		$sql_parts['where'] = array_unique($sql_parts['where']);
-		$sql_parts['order'] = array_unique($sql_parts['order']);
-
-		$sql_select = '';
-		$sql_from = '';
-		$sql_where = '';
-		$sql_order = '';
-		if(!empty($sql_parts['select']))	$sql_select.= implode(',',$sql_parts['select']);
-		if(!empty($sql_parts['from']))		$sql_from.= implode(',',$sql_parts['from']);
-		if(!empty($sql_parts['where']))		$sql_where.= ' AND '.implode(' AND ',$sql_parts['where']);
-		if(!empty($sql_parts['order']))		$sql_order.= ' ORDER BY '.implode(',',$sql_parts['order']);
-		$sql_limit = $sql_parts['limit'];
-
-		$sql = 'SELECT DISTINCT '.$sql_select.'
-				FROM '.$sql_from.'
-				WHERE '.DBin_node('u.mediaid', $nodeids).
-				$sql_where.
-				$sql_order;
-
-		$res = DBselect($sql, $sql_limit);
-		while($media = DBfetch($res)){
-			if(!is_null($options['count'])){
-				$result = $media;
-			}
-			else{
-				$mediaids[$media['mediaid']] = $media['mediaid'];
-
-				if($options['output'] == API_OUTPUT_SHORTEN){
-					$result[$media['mediaid']] = array('mediaid' => $media['mediaid']);
-				}
-				else{
-					if(!isset($result[$media['mediaid']])) $result[$media['mediaid']]= array();
-
-					$result[$media['mediaid']] += $media;
-				}
-			}
-		}
-
-		if(($options['output'] != API_OUTPUT_EXTEND) || !is_null($options['count'])){
-			if(is_null($options['preservekeys'])) $result = zbx_cleanHashes($result);
-
-			return $result;
-		}
-
-// removing keys (hash -> array)
-		if(is_null($options['preservekeys'])){
-			$result = zbx_cleanHashes($result);
-		}
-
-	return $result;
 	}
 }
 ?>

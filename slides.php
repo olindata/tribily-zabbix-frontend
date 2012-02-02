@@ -27,7 +27,7 @@ require_once('include/blocks.inc.php');
 $page['title'] = 'S_CUSTOM_SLIDES';
 $page['file'] = 'slides.php';
 $page['hist_arg'] = array('elementid');
-$page['scripts'] = array('effects.js','dragdrop.js','class.pmaster.js','class.calendar.js','gtlc.js');
+$page['scripts'] = array('class.pmaster.js', 'class.calendar.js', 'gtlc.js');
 
 $page['type'] = detect_page_type(PAGE_TYPE_HTML);
 
@@ -151,6 +151,13 @@ include_once('include/page_header.php');
 				echo $script;
 			}
 		}
+
+		// saving fixed/dynamic setting to profile
+		if('timelinefixedperiod' == $_REQUEST['favobj']){
+			if(isset($_REQUEST['favid'])){
+				CProfile::update('web.slides.timelinefixed', $_REQUEST['favid'], PROFILE_TYPE_INT);
+			}
+		}
 	}
 
 	if((PAGE_TYPE_JS == $page['type']) || (PAGE_TYPE_HTML_BLOCK == $page['type'])){
@@ -213,7 +220,7 @@ include_once('include/page_header.php');
 		else{
 			$icon = new CIcon(S_FAVOURITES, 'iconplus');
 		}
-		
+
 		$fs_icon = get_icon('fullscreen', array('fullscreen' => $_REQUEST['fullscreen']));
 
 		$refresh_icon = new CIcon(S_MENU, 'iconmenu');
@@ -239,7 +246,6 @@ include_once('include/page_header.php');
 // }}} HEADER
 
 		if($screen){
-
 			if((2 != $_REQUEST['fullscreen']) && check_dynamic_items($elementid, 1)){
 				if(!isset($_REQUEST['hostid'])){
 					$_REQUEST['groupid'] = $_REQUEST['hostid'] = 0;
@@ -281,7 +287,14 @@ include_once('include/page_header.php');
 			$menu = array();
 			$submenu = array();
 			$refresh_multipl = CProfile::get('web.slides.rf_rate.hat_slides', 1, $elementid);
-			make_refresh_menu('mainpage','hat_slides', $refresh_multipl, array('elementid'=> $elementid), $menu, $submenu, 2);
+
+// workaround for 1.8.2 upgrade, earlier value was integer type, now str
+			if(empty($refresh_multipl)){
+				$refresh_multipl = 1;
+				CProfile::update('web.slides.rf_rate.hat_slides', $refresh_multipl, PROFILE_TYPE_STR, $elementid);
+			}
+
+			make_refresh_menu('mainpage', 'hat_slides', $refresh_multipl, array('elementid'=> $elementid), $menu, $submenu, 2);
 			insert_js('var page_menu='.zbx_jsvalue($menu).";\n".'var page_submenu='.zbx_jsvalue($submenu).";\n");
 // --------------
 
@@ -318,7 +331,8 @@ include_once('include/page_header.php');
 					'loadScroll' => 1,
 					'scrollWidthByImage' => 0,
 					'dynamic' => 0,
-					'mainObject' => 1
+					'mainObject' => 1,
+					'periodFixed' => CProfile::get('web.slides.timelinefixed', 1)
 				);
 
 				zbx_add_post_js('timeControl.addObject("iframe",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');
@@ -329,10 +343,6 @@ include_once('include/page_header.php');
 	//		$element = get_screen($screen['screenid'],2,$effectiveperiod);
 
 			$slides_wdgt->addItem(new CSpan(S_LOADING_P, 'textcolorstyles'));
-
-
-			$jsmenu = new CPUMenu(null, 170);
-			$jsmenu->InsertJavaScript();
 		}
 		else{
 			$slides_wdgt->addItem(new CTableInfo(S_NO_SLIDES_DEFINED));
@@ -340,9 +350,6 @@ include_once('include/page_header.php');
 
 		$slides_wdgt->show();
 	}
-
-?>
-<?php
 
 include_once('include/page_footer.php');
 

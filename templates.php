@@ -186,12 +186,12 @@ include_once('include/page_header.php');
 			'hostids' => $templateids,
 			'output' => API_OUTPUT_EXTEND,
 			'preservekeys' => 1,
-			'select_dependencies' => 1,
+			'select_dependencies' => API_OUTPUT_EXTEND,
 			'expandData' => 1
 		);
 		$triggers = CTrigger::get($params);
 		foreach($triggers as $tnum => $trigger){
-			$triggers[$trigger['triggerid']]['expression'] = explode_exp($trigger['expression'], false);
+			$triggers[$trigger['triggerid']]['expression'] = explode_exp($trigger['expression']);
 		}
 
 // SELECT TRIGGER DEPENDENCIES
@@ -246,16 +246,18 @@ include_once('include/page_header.php');
 		require_once('include/export.inc.php');
 		DBstart();
 		$result = zbxXML::import($_FILES['import_file']['tmp_name']);
-		$result &= zbxXML::parseMain($rules);
+		if($result) $result = zbxXML::parseMain($rules);
 		$result = DBend($result);
 		show_messages($result, S_IMPORTED.SPACE.S_SUCCESSEFULLY_SMALL, S_IMPORT.SPACE.S_FAILED_SMALL);
 	}
 ?>
 <?php
-/**********************************/
-/* <<<--- TEMPLATE ACTIONS --->>> */
-/**********************************/
-// unlink, unlink_and_clear
+	/**********************************/
+	/* <<<--- TEMPLATE ACTIONS --->>> */
+	/**********************************/
+	/**
+	 * Unlink, unlink_and_clear
+	 */
 	if((isset($_REQUEST['unlink']) || isset($_REQUEST['unlink_and_clear']))){
 		$_REQUEST['clear_templates'] = get_request('clear_templates', array());
 
@@ -268,31 +270,33 @@ include_once('include/page_header.php');
 		}
 		foreach($unlink_templates as $id) unset($_REQUEST['templates'][$id]);
 	}
-// clone
+	/**
+	 * Clone
+	 */
 	else if(isset($_REQUEST['clone']) && isset($_REQUEST['templateid'])){
 		unset($_REQUEST['templateid']);
 		$_REQUEST['form'] = 'clone';
 	}
-// full_clone
+	/**
+	 * Full_clone
+	 */
 	else if(isset($_REQUEST['full_clone']) && isset($_REQUEST['templateid'])){
 		$_REQUEST['form'] = 'full_clone';
 		$_REQUEST['hosts'] = array();
 	}
-// save
+	/**
+	 * Save
+	 */
 	else if(isset($_REQUEST['save'])){
 		$groups = get_request('groups', array());
 		$hosts = get_request('hosts', array());
 		$templates = get_request('templates', array());
 		$templates_clear = get_request('clear_templates', array());
 		$templateid = get_request('templateid', 0);
-		$newgroup = get_request('newgroup', 0);
 		$template_name = get_request('template_name', '');
-
-		$result = true;
 
 		if(!count(get_accessible_nodes_by_user($USER_DETAILS, PERM_READ_WRITE, PERM_RES_IDS_ARRAY)))
 			access_deny();
-
 
 		$clone_templateid = false;
 		if($_REQUEST['form'] == 'full_clone'){
@@ -300,123 +304,133 @@ include_once('include/page_header.php');
 			$templateid = null;
 		}
 
-		DBstart();
-
-// CREATE NEW GROUP
-		$groups = zbx_toObject($groups, 'groupid');
-		if(!empty($newgroup)){
-			$result = CHostGroup::create(array('name' => $newgroup));
-			$options = array(
-				'groupids' => $result['groupids'],
-				'output' => API_OUTPUT_EXTEND
-			);
-			$newgroup = CHostGroup::get($options);
-			if($newgroup){
-				$groups = array_merge($groups, $newgroup);
-			}
-			else{
-				$result = false;
-			}
-		}
-
-		$templates = array_keys($templates);
-		$templates = zbx_toObject($templates, 'templateid');
-		$templates_clear = zbx_toObject($templates_clear, 'templateid');
-
-		$hosts = zbx_toObject($hosts, 'hostid');
-
-// CREATE/UPDATE TEMPLATE {{{
 		if($templateid){
-			$template = array(
-				'templateid' => $templateid,
-				'host' => $template_name,
-				'groups' => $groups,
-				'templates' => $templates,
-				'templates_clear' => $templates_clear,
-				'hosts' => $hosts,
-				'macros' => get_request('macros', array())
-			);
-
-			$result = CTemplate::update($template);
-			if(!$result){
-				error(CTemplate::resetErrors());
-				$result = false;
-			}
-
 			$msg_ok = S_TEMPLATE_UPDATED;
 			$msg_fail = S_CANNOT_UPDATE_TEMPLATE;
 		}
 		else{
+			$msg_ok = S_TEMPLATE_ADDED;
+			$msg_fail = S_CANNOT_ADD_TEMPLATE;
+		}
+
+		try{
+			DBstart();
+
+			// create new group
+			if(!zbx_empty($_REQUEST['newgroup'])){
+				$newGroup = CHostGroup::create(array('name' => $_REQUEST['newgroup']));
+
+				if(!$newGroup){
+					throw new Exception();
+				}
+				$groups[] = reset($newGroup['groupids']);
+			}
+			$groups = zbx_toObject($groups, 'groupid');
+
+			$templates = array_keys($templates);
+			$templates = zbx_toObject($templates, 'templateid');
+			$templates_clear = zbx_toObject($templates_clear, 'templateid');
+
+			$hosts = zbx_toObject($hosts, 'hostid');
+
+			$macros = get_request('macros', array());
+			foreach($macros as $mnum => $macro){
+				if(zbx_empty($macro['value'])) unset($macros[$mnum]);
+			}
+
 			$template = array(
 				'host' => $template_name,
 				'groups' => $groups,
 				'templates' => $templates,
 				'hosts' => $hosts,
-				'macros' => get_request('macros', array())
+				'macros' => $macros
 			);
-			$result = CTemplate::create($template);
 
-			if($result){
-				$templateid = reset($result['templateids']);
+			// CREATE/UPDATE TEMPLATE
+			if($templateid){
+				$created = 0;
+				$template['templateid'] = $templateid;
+				$template['templates_clear'] = $templates_clear;
+
+				if(!CTemplate::update($template)){
+					error(CTemplate::resetErrors());
+					throw new Exception();
+				}
 			}
 			else{
-				error(CTemplate::resetErrors());
-				$result = false;
-			}
-			$msg_ok = S_TEMPLATE_ADDED;
-			$msg_fail = S_CANNOT_ADD_TEMPLATE;
-		}
-// }}} CREATE/UPDATE TEMPLATE
-
-// FULL_CLONE {
-
-		if(!zbx_empty($templateid) && $templateid && $clone_templateid && ($_REQUEST['form'] == 'full_clone')){
-// Host applications
-			$sql = 'SELECT * FROM applications WHERE hostid='.$clone_templateid.' AND templateid=0';
-			$res = DBselect($sql);
-			while($db_app = DBfetch($res)){
-				add_application($db_app['name'], $templateid, 0);
+				$created = 1;
+				$result = CTemplate::create($template);
+				if($result){
+					$templateid = reset($result['templateids']);
+				}
+				else{
+					error(CTemplate::resetErrors());
+					throw new Exception();
+				}
 			}
 
-// Host items
-			$sql = 'SELECT DISTINCT i.itemid, i.description '.
-					' FROM items i '.
-					' WHERE i.hostid='.$clone_templateid.
-						' AND i.templateid=0 '.
-					' ORDER BY i.description';
-			$res = DBselect($sql);
-			while($db_item = DBfetch($res)){
-				$result &= (bool) copy_item_to_host($db_item['itemid'], $templateid, true);
+			// FULL_CLONE
+			if(!zbx_empty($templateid) && $templateid && $clone_templateid && ($_REQUEST['form'] == 'full_clone')){
+				// Host applications
+				$sql = 'SELECT * FROM applications WHERE hostid='.$clone_templateid.' AND templateid=0';
+				$res = DBselect($sql);
+				while($db_app = DBfetch($res)){
+					add_application($db_app['name'], $templateid, 0);
+				}
+
+				// Host items
+				$sql = 'SELECT DISTINCT i.itemid, i.description '.
+						' FROM items i '.
+						' WHERE i.hostid='.$clone_templateid.
+							' AND i.templateid=0 '.
+						' ORDER BY i.description';
+				$res = DBselect($sql);
+				$result = true;
+				while($db_item = DBfetch($res)){
+					$result &= (bool) copy_item_to_host($db_item['itemid'], $templateid, true);
+				}
+				if(!$result) throw new Exception();
+
+				// Host triggers
+				if(!copy_triggers($clone_templateid, $templateid)) throw new Exception();
+
+				// Host graphs
+				$options = array(
+					'hostids' => $clone_templateid,
+					'inherited' => 0,
+					'output' => API_OUTPUT_REFER
+				);
+				$db_graphs = CGraph::get($options);
+				$result = true;
+				foreach($db_graphs as $gnum => $db_graph){
+					$result &= (bool) copy_graph_to_host($db_graph['graphid'], $templateid, true);
+				}
+				if(!$result) throw new Exception();
 			}
 
-// Host triggers
-			$result &= copy_triggers($clone_templateid, $templateid);
-
-// Host graphs
-			$options = array(
-				'hostids' => $clone_templateid,
-				'inherited' => 0,
-				'output' => API_OUTPUT_REFER
-			);
-			$db_graphs = CGraph::get($options);
-			foreach($db_graphs as $gnum => $db_graph){
-				$result &= (bool) copy_graph_to_host($db_graph['graphid'], $templateid, true);
+			if(!DBend(true)){
+				throw new Exception();
 			}
-		}
-// }
 
+			show_messages(true, $msg_ok, $msg_fail);
 
-		$result = DBend($result);
-
-		show_messages($result, $msg_ok, $msg_fail);
-
-		if($result){
+			if($created){
+				add_audit_ext(AUDIT_ACTION_ADD, AUDIT_RESOURCE_TEMPLATE, $templateid, $template_name, 'hosts', NULL, NULL);
+			}
 			unset($_REQUEST['form']);
 			unset($_REQUEST['templateid']);
+
 		}
+		catch(Exception $e){
+			DBend(false);
+			show_messages(false, $msg_ok, $msg_fail);
+		}
+
 		unset($_REQUEST['save']);
 	}
-// delete, delete_and_clear
+	/**
+	 * Delete, delete and clear
+	 */
 	else if((isset($_REQUEST['delete']) || isset($_REQUEST['delete_and_clear'])) && isset($_REQUEST['templateid'])){
 		$unlink_mode = false;
 		if(isset($_REQUEST['delete'])){
@@ -429,27 +443,30 @@ include_once('include/page_header.php');
 		$result = delete_host($_REQUEST['templateid'], $unlink_mode);
 		$result = DBend($result);
 
-		show_messages($result, S_HOST_DELETED, S_CANNOT_DELETE_HOST);
+		show_messages($result, S_TEMPLATE_DELETED, S_CANNOT_DELETE_TEMPLATE);
 		if($result){
-/*				add_audit(AUDIT_ACTION_DELETE,AUDIT_RESOURCE_HOST,'Host ['.$host['host'].']');*/
+		/*	add_audit(AUDIT_ACTION_DELETE,AUDIT_RESOURCE_HOST,'Host ['.$host['host'].']');*/
 			unset($_REQUEST['form']);
 			unset($_REQUEST['templateid']);
 		}
 		unset($_REQUEST['delete']);
 	}
-// ---------- GO ---------
+	/**
+	 * Go: delete, delete and clear
+	 */
 	else if(str_in_array($_REQUEST['go'], array('delete', 'delete_and_clear')) && isset($_REQUEST['templates'])){
 		$unlink_mode = false;
-		if(isset($_REQUEST['delete'])){
+		if($_REQUEST['go'] == 'delete'){
 			$unlink_mode = true;
 		}
 
+		DBstart();
 		$go_result = true;
 		$templates = get_request('templates', array());
 		$del_hosts = CTemplate::get(array('templateids' => $templates, 'editable' => 1));
 		$del_hosts = zbx_objectValues($del_hosts, 'templateid');
 
-		DBstart();
+
 		$go_result = delete_host($del_hosts, $unlink_mode);
 		$go_result = DBend($go_result);
 
@@ -525,7 +542,7 @@ include_once('include/page_header.php');
 			}
 
 			if(($templateid > 0) && !isset($_REQUEST['form_refresh'])){
-	// get template groups from db
+				// get template groups from db
 				$options = array(
 					'hostids' => $templateid,
 					'editable' => 1
@@ -533,7 +550,7 @@ include_once('include/page_header.php');
 				$groups = CHostGroup::get($options);
 				$groups = zbx_objectValues($groups, 'groupid');
 
-	// get template hosts from db
+				// get template hosts from db
 				$params = array(
 					'templateids' => $templateid,
 					'editable' => 1,
@@ -715,9 +732,9 @@ include_once('include/page_header.php');
 				$host_footer[] = SPACE;
 				$host_footer[] = new CButton('full_clone', S_FULL_CLONE);
 				$host_footer[] = SPACE;
-				$host_footer[] = new CButtonDelete(S_DELETE_SELECTED_HOST_Q, url_param('form').url_param('templateid').url_param('groupid'));
+				$host_footer[] = new CButtonDelete(S_DELETE_TEMPLATE_Q, url_param('form').url_param('templateid').url_param('groupid'));
 				$host_footer[] = SPACE;
-				$host_footer[] = new CButtonQMessage('delete_and_clear', S_DELETE_AND_CLEAR, S_DELETE_SELECTED_HOSTS_Q, url_param('form').
+				$host_footer[] = new CButtonQMessage('delete_and_clear', S_DELETE_AND_CLEAR, S_DELETE_AND_CLEAR_TEMPLATE_Q, url_param('form').
 					url_param('templateid').url_param('groupid'));
 			}
 			array_push($host_footer, SPACE, new CButtonCancel(url_param('groupid')));
@@ -923,7 +940,7 @@ include_once('include/page_header.php');
 // GO{
 		$goBox = new CComboBox('go');
 		$goBox->addItem('export', S_EXPORT_SELECTED);
-		
+
 		$goOption = new CComboItem('delete',S_DELETE_SELECTED);
 		$goOption->setAttribute('confirm',S_DELETE_SELECTED_TEMPLATES_Q);
 		$goBox->addItem($goOption);

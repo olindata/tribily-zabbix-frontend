@@ -46,9 +46,12 @@ function __autoload($class_name){
 		'cmediatype' => 1,
 		'cproxy' => 1,
 		'cscreen' => 1,
+		'cscreenitem' => 1,
 		'cscript' => 1,
 		'ctemplate' => 1,
 		'ctrigger' => 1,
+		'ctriggerexpression' => 1,
+		'citemkey' => 1,
 		'cuser' => 1,
 		'cusergroup' => 1,
 		'cusermacro' => 1,
@@ -90,6 +93,9 @@ function __autoload($class_name){
 	require_once('include/services.inc.php');
 	require_once('include/httptest.inc.php');
 
+	include_once('include/actions.inc.php');
+	include_once('include/discovery.inc.php');
+
 	require_once('include/sounds.inc.php');
 	require_once('include/images.inc.php');
 	require_once('include/events.inc.php');
@@ -128,9 +134,13 @@ function __autoload($class_name){
 	require_once('include/validate.inc.php');
 
 	function zbx_err_handler($errno, $errstr, $errfile, $errline){
-		error($errstr.'['.$errfile.':'.$errline.']');
-//		show_messages();
-//		die();
+		$pathLength = strlen(__FILE__);
+
+		// strlen(include/config.inc.php) = 22
+		$pathLength -= 22;
+		$errfile = substr($errfile, $pathLength);
+
+		error($errstr.' ['.$errfile.':'.$errline.']');
 	}
 
 	/********** START INITIALIZATION *********/
@@ -151,44 +161,54 @@ function __autoload($class_name){
 	}
 
 	if(file_exists($ZBX_CONFIGURATION_FILE) && !isset($_COOKIE['ZBX_CONFIG']) && !isset($DENY_GUI)){
-		ob_start();
-		include $ZBX_CONFIGURATION_FILE;
-		ob_end_clean ();
-		require_once('include/db.inc.php');
-
-		$error = '';
-		if(!DBconnect($error)){
-			$_REQUEST['message'] = $error;
-
-			define('ZBX_DISTRIBUTED', false);
-			define('ZBX_PAGE_NO_AUTHORIZATION', true);
-
-			$show_warning = true;
+		$config = new CConfigFile($ZBX_CONFIGURATION_FILE);
+		if($config->load()){
+			$config->makeGlobal();
 		}
 		else{
-			global $ZBX_LOCALNODEID, $ZBX_LOCMASTERID;
+			$show_warning = true;
+			define('ZBX_DISTRIBUTED', false);
+			define('ZBX_PAGE_NO_AUTHORIZATION', true);
+			error($config->error);
+		}
 
-// Init LOCAL NODE ID
-			if($local_node_data = DBfetch(DBselect('SELECT * FROM nodes WHERE nodetype=1 ORDER BY nodeid'))){
-				$ZBX_LOCALNODEID = $local_node_data['nodeid'];
-				$ZBX_LOCMASTERID = $local_node_data['masterid'];
+		require_once('include/db.inc.php');
 
-				$ZBX_NODES[$local_node_data['nodeid']] = $local_node_data;
+		if(!isset($show_warning)){
+			$error = '';
+			if(!DBconnect($error)){
+				$_REQUEST['message'] = $error;
 
-				define('ZBX_DISTRIBUTED', true);
+				define('ZBX_DISTRIBUTED', false);
+				define('ZBX_PAGE_NO_AUTHORIZATION', true);
+
+				$show_warning = true;
 			}
 			else{
-				define('ZBX_DISTRIBUTED', false);
+				global $ZBX_LOCALNODEID, $ZBX_LOCMASTERID;
+
+// Init LOCAL NODE ID
+				if($local_node_data = DBfetch(DBselect('SELECT * FROM nodes WHERE nodetype=1 ORDER BY nodeid'))){
+					$ZBX_LOCALNODEID = $local_node_data['nodeid'];
+					$ZBX_LOCMASTERID = $local_node_data['masterid'];
+
+					$ZBX_NODES[$local_node_data['nodeid']] = $local_node_data;
+
+					define('ZBX_DISTRIBUTED', true);
+				}
+				else{
+					define('ZBX_DISTRIBUTED', false);
+				}
+				unset($local_node_data);
 			}
-			unset($local_node_data);
+			unset($error);
 		}
-		unset($error);
 	}
 	else{
 		if(file_exists($ZBX_CONFIGURATION_FILE)){
 			ob_start();
 			include $ZBX_CONFIGURATION_FILE;
-			ob_end_clean ();
+			ob_end_clean();
 		}
 
 		require_once('include/db.inc.php');
@@ -198,7 +218,7 @@ function __autoload($class_name){
 		$show_setup = true;
 	}
 
-	if(!defined('ZBX_PAGE_NO_AUTHORIZATION')){
+	if(!defined('ZBX_PAGE_NO_AUTHORIZATION') && !defined('ZBX_RPC_REQUEST')){
 		check_authorisation();
 
 		if(file_exists('include/locales/'.$USER_DETAILS['lang'].'.inc.php')){
@@ -560,9 +580,8 @@ function __autoload($class_name){
 		$out = NULL;
 		$str = trim($str,';');
 		$periods = explode(';',$str);
-		foreach($periods as $preiod){
-//			if(!ereg('^([1-7])-([1-7]),([0-9]{1,2}):([0-9]{1,2})-([0-9]{1,2}):([0-9]{1,2})$', $preiod, $arr)) return NULL;
-			if(!preg_match('/^([1-7])-([1-7]),([0-9]{1,2}):([0-9]{1,2})-([0-9]{1,2}):([0-9]{1,2})$/', $preiod, $arr)) return NULL;
+		foreach($periods as $period){
+			if(!preg_match('/^([1-7])-([1-7]),([0-9]{1,2}):([0-9]{1,2})-([0-9]{1,2}):([0-9]{1,2})$/', $period, $arr)) return NULL;
 
 			for($i = $arr[1]; $i <= $arr[2]; $i++){
 				if(!isset($out[$i])) $out[$i] = array();
@@ -587,7 +606,7 @@ function __autoload($class_name){
 			clear_messages();
 			$status['zabbix_server'] = S_NO;
 		}
-		else {
+		else{
 			$status['zabbix_server'] = S_YES;
 		}
 // triggers

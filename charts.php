@@ -63,10 +63,15 @@ include_once('include/page_header.php');
 		if('hat' == $_REQUEST['favobj']){
 			CProfile::update('web.charts.hats.'.$_REQUEST['favref'].'.state',$_REQUEST['state'], PROFILE_TYPE_INT);
 		}
-
 		if('timeline' == $_REQUEST['favobj']){
 			if(isset($_REQUEST['graphid']) && isset($_REQUEST['period'])){
 				navigation_bar_calc('web.graph',$_REQUEST['favid'], true);
+			}
+		}
+		// saving fixed/dynamic setting to profile
+		if('timelinefixedperiod' == $_REQUEST['favobj']){
+			if(isset($_REQUEST['favid'])){
+				CProfile::update('web.charts.timelinefixed', $_REQUEST['favid'], PROFILE_TYPE_INT);
 			}
 		}
 
@@ -114,8 +119,10 @@ include_once('include/page_header.php');
 
 // resets get params for proper page refresh
 	if(isset($_REQUEST['period']) || isset($_REQUEST['stime'])){
-		navigation_bar_calc('web.graph',$_REQUEST['graphid'], true);
-		resetGetParams(array('period', 'stime'));
+		navigation_bar_calc('web.graph', $_REQUEST['graphid'], true);
+		jsRedirect('charts.php?graphid=' . $_REQUEST['graphid']);
+		include_once('include/page_footer.php');
+		exit();
 	}
 //--
 
@@ -193,7 +200,8 @@ include_once('include/page_header.php');
 			'loadImage' => 1,
 			'loadScroll' => 1,
 			'scrollWidthByImage' => $scrollWidthByImage,
-			'dynamic' => 1
+			'dynamic' => 1,
+			'periodFixed' => CProfile::get('web.charts.timelinefixed', 1)
 		);
 
 		zbx_add_post_js('timeControl.addObject("'.$dom_graph_id.'",'.zbx_jsvalue($timeline).','.zbx_jsvalue($objData).');');

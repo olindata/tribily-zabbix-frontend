@@ -57,7 +57,7 @@ class CStringParser {
 		        $this->addToIndex();
                 else
                         $this->indexLevels[$this->currentLevel] = Array();
-                
+
                 $this->indexes =& $this->indexLevels[$this->currentLevel];
 
 		for($this->currentSymbolNum = 0; $this->currentSymbolNum < $this->totalSymbols; $this->currentSymbolNum++) {
@@ -81,18 +81,18 @@ class CStringParser {
 
 		return count($this->errors) > 0 ? false : true;
 	}
-	
+
 	private function addToIndex() {
 		if(!isset($this->levelData[$this->currentLevel]['indexes']))
 			$this->levelData[$this->currentLevel]['indexes'] = Array();
-		
+
 		$this->indexLevels[$this->currentLevel] =& $this->levelData[$this->currentLevel]['indexes'];
 	}
-	
+
 	private function removeFromIndex () {
 		unset($this->indexLevels[$this->currentLevel]);
 	}
-	
+
 	private function checkSymbol() {
 		//$this->saveDebug("checking symbol {$this->levelData[$this->currentLevel]['levelType']}\n");
 		if($this->currentLevel > 0 && isset($this->levelData[$this->currentLevel]['levelType']) && isset($this->ess[$this->levelData[$this->currentLevel]['levelType']])) {
@@ -226,11 +226,13 @@ class CStringParser {
 								if(!is_array($this->ess[$ruleSetName]['allowedSymbols'])) {
 									$this->ess[$ruleSetName]['allowedSymbols'] = Array($this->ess[$ruleSetName]['allowedSymbols']);
 								}
+
 								foreach($this->ess[$ruleSetName]['allowedSymbols'] as $regexp) {
 									if(preg_match("/^".$regexp."$/", $compareValue)) {
 										$allowedSymbolsValid = true;
 										break;
-									}else{
+									}
+									else{
 										$allowedSymbolsValid = false;
 									}
 								}
@@ -266,13 +268,13 @@ class CStringParser {
 
 	private function checkCloseSymbol() {
 		//$this->saveDebug("checking Close symbol {$this->levelData[$this->currentLevel]['levelType']} -> ".(isset($this->levelData[$this->currentLevel]['escaped']) ? var_export($this->levelData[$this->currentLevel]['escaped'], true) : '')."\n");
-		
+
 		if(isset($this->levelData[$this->currentLevel]['parts']) && is_array($this->levelData[$this->currentLevel]['parts']) && count($this->levelData[$this->currentLevel]['parts']) > 0) {
 		        $currentLastPart = end($this->levelData[$this->currentLevel]['parts']);
 		        if($currentLastPart === NULL) $currentLastPart = false;
 		}else
 		        $currentLastPart = false;
-		
+
 		if(	!is_array($this->currentRuleSet) ||
 			!isset($this->currentRuleSet['closeSymbol']) ||
 			$this->levelData[$this->currentLevel]['openSymbolNum'] == $this->currentSymbolNum ||
@@ -328,7 +330,7 @@ class CStringParser {
 
 					unset($this->currentRuleSet);
 					$this->currentRuleSet =& $ruleData;
-					
+
 					$newLevel = Array();
 					$newLevel['levelType'] = $ruleData['ruleName'];
 					$newLevel['openSymbol'] = $closeSymbol;
@@ -439,11 +441,11 @@ class CStringParser {
 
                 $currentItem =& $this->levelData[$this->currentLevel];
                 if(isset($currentItem['parts'])) ksort($currentItem['parts'], SORT_NUMERIC);
-                
+
                 $key = $currentItem['openSymbolNum'].'_'.$currentItem['closeSymbolNum'];
-                                
+
 		$this->levelData[$this->currentLevel-1]['parts'][$key] =& $this->levelData[$this->currentLevel];
-		
+
 		unset($this->levelData[$this->currentLevel]);
 		if(isset($this->ess[$currentItem['levelType']]['levelIndex']) && $this->ess[$currentItem['levelType']]['levelIndex'] === true) {
 			$this->removeFromIndex();
@@ -461,7 +463,7 @@ class CStringParser {
 		if(is_array($this->indexLevels) && isset($itemToIndex) && is_array($itemToIndex)) {
 			foreach($this->indexLevels as &$level) {
 				if(!isset($level[$levelType])) $level[$levelType] = Array();
-				
+
 				if(!isset($level[$levelType][$itemToIndex['openSymbolNum'].'_'.$itemToIndex['closeSymbolNum']]))
 				        $level[$levelType][$itemToIndex['openSymbolNum'].'_'.$itemToIndex['closeSymbolNum']] =& $itemToIndex;
 			}
@@ -479,6 +481,9 @@ class CStringParser {
 	}
 
 	private function validateFatal() {
+		return true;
+
+		/*
 		if(count($this->levelData) == 1) return true;
 
 		$this->errors[] = Array('errorCode' => 1,
@@ -487,6 +492,7 @@ class CStringParser {
 					'errEnd' => mb_strlen($this->expression)-1);
 
 		return false;
+		*/
 	}
 
 	private function validate(&$parent, &$levelData, $index) {
@@ -513,7 +519,7 @@ class CStringParser {
                         $startKey = $endKey = $nextKey = $prevKey = false;
                         $startItem = $endItem = $nextItem = $prevItem = false;
                 }
-                
+
 		if(isset($this->ess[$levelData['levelType']]['allowedSymbolsBefore'])) {
 			if(isset($parent['openSymbolNum']) && $startKey == $index && $parent['openSymbolNum'] < $levelData['openSymbolNum'])  {
 				$startCut = $parent['openSymbolNum']+1;
@@ -537,7 +543,7 @@ class CStringParser {
 							'errValues' => Array($beforesymbols));
 			}
 		}
-		
+
 		if(isset($this->ess[$levelData['levelType']]['allowedSymbolsAfter'])) {
 			if(isset($parent['closeSymbolNum']) && $endKey == $index && $parent['closeSymbolNum'] > $levelData['closeSymbolNum'])  {
 				$startCut = $levelData['closeSymbolNum']+1;
@@ -632,7 +638,7 @@ class CStringParser {
 					if(in_array($val['value'], $this->ess[$levelData['levelType']]['allowedValues'])) {
 						$allowedValuesValid = true;
 					}
-					
+
 					if(!$allowedValuesValid) $errValues[] = $val['value'];
 				}
 
@@ -662,10 +668,10 @@ class CStringParser {
 		if(isset($this->ess[$levelData['levelType']]['customValidate'])) {
 		        if(!is_array($this->ess[$levelData['levelType']]['customValidate']))
 		                $this->ess[$levelData['levelType']]['customValidate'] = Array($this->ess[$levelData['levelType']]['customValidate']);
-                        
+
                         foreach($this->ess[$levelData['levelType']]['customValidate'] as &$customFunction) {
                                 if(!is_callable($customFunction)) continue;
-                                
+
         			$ret = call_user_func_array($customFunction, Array(&$parent, &$levelData, $index, &$this->expression, &$this->ess[$levelData['levelType']]));
 
         			if(isset($ret['valid']) && $ret['valid'] === false && isset($ret['errArray']) && is_array($ret['errArray']) && isset($ret['errArray']['errorCode']) && isset($ret['errArray']['errStart']) && isset($ret['errArray']['errEnd'])) {
@@ -682,6 +688,10 @@ class CStringParser {
 	private function levelValue(&$levelData) {
 		//$this->saveDebug("Clearing value of {$levelData['levelType']}: ".var_export($levelData['value'], true)."\n");
 		//$value = $levelData['value'];
+		if (!isset($levelData['levelType'])) {
+			$levelData['levelType'] = 'independent';
+		}
+
 		$value = '';
 		$values = Array();
 		$openprepend = (!isset($this->ess[$levelData['levelType']]['inclusive']) || $this->ess[$levelData['levelType']]['inclusive'] !== true) && isset($levelData['openSymbol']) ? mb_strlen($levelData['openSymbol']) : 0;
@@ -693,7 +703,7 @@ class CStringParser {
 			foreach($levelData['parts'] as $key => &$level) {
 				//$this->saveDebug("Test {$level['levelType']} for first: ".var_export(!isset($prev) && ( $level['openSymbolNum'] > $levelData['openSymbolNum']+$openprepend/* || (!isset($levelData['openSymbol']) && $level['openSymbolNum']==$levelData['openSymbolNum'])*/), true)."\n");
 				if(!isset($prev) && (
-                                        $level['openSymbolNum'] > $levelData['openSymbolNum']+$openprepend/* || 
+                                        $level['openSymbolNum'] > $levelData['openSymbolNum']+$openprepend/* ||
 					(!isset($levelData['openSymbol']) && $level['openSymbolNum']==$levelData['openSymbolNum'])*/
                                 )) {
 					$val = Array();
@@ -743,11 +753,11 @@ class CStringParser {
 	public function getElements($index) {
 		return !isset($this->indexes[$index]) ? Array() : $this->indexes[$index];
 	}
-	
+
 	public function getTree() {
 		return $this->parsedTree;
 	}
-	
+
 	public function getErrors() {
 		return $this->errors;
 	}
@@ -755,289 +765,6 @@ class CStringParser {
 	public function saveDebug($debugStr) {
 		global $debugfile;
 		file_put_contents($debugfile, $debugStr, FILE_APPEND);
-	}
-}
-
-function triggerExpressionValidateIndependent(&$parent, &$levelData, $index, &$expression, &$rules) {
-        
-        if(!isset($levelData['indexes']['server']) || !is_array($levelData['indexes']['server']) || !count($levelData['indexes']['server'])) {
-                return Array(
-                        'valid' => false,
-                        'errArray' => Array(
-                                'errorCode' => 16,
-                                'errorMsg' => 'At least one host required in expression. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-                                'errStart' => $levelData['openSymbolNum'],
-                                'errEnd' => $levelData['closeSymbolNum'])
-                        );
-        }
-}
-
-function triggerExpressionValidateGroup(&$parent, &$levelData, $index, &$expression, &$rules) {
-	$replacementchar = '0';
-
-	$openprepend = (!isset($rules['inclusive']) || $rules['inclusive'] !== true) && isset($levelData['openSymbol']) ? mb_strlen($levelData['openSymbol']) : 0;
-	$openpostend = (!isset($rules['inclusive']) || $rules['inclusive'] !== true) && isset($levelData['closeSymbol']) ? mb_strlen($levelData['closeSymbol'])*-1 : 0;
-	if(isset($levelData['parts']) && is_array($levelData['parts']) && count($levelData['parts']) > 0) {
-		$values = '';
-		$prev = NULL;
-		
-		end($levelData['parts']);
-		$endKey = key($levelData['parts']);
-		
-		foreach($levelData['parts'] as $key => &$level) {
-			if(!isset($prev) && $level['openSymbolNum'] > $levelData['openSymbolNum']+$openprepend) {
-				$val = Array();
-				$values .= mb_substr($expression, $levelData['openSymbolNum']+$openprepend, $level['openSymbolNum']-$levelData['openSymbolNum']).$replacementchar; // should be changed to zbx_substr
-			}else if(!isset($prev) && $level['openSymbolNum'] == $levelData['openSymbolNum']+$openprepend){
-				$values .= $replacementchar;
-			}
-
-			if(isset($prev) && $level['openSymbolNum'] > $prev['closeSymbolNum']+mb_strlen($prev['closeSymbol'])) {
-				$val = Array();
-				$values .= mb_substr($expression, $prev['closeSymbolNum']+mb_strlen($prev['closeSymbol']), $level['openSymbolNum']-($prev['closeSymbolNum']+mb_strlen($prev['closeSymbol']))).$replacementchar; // should be changed to zbx_substr
-			}
-
-			if($endKey == $key && $level['closeSymbolNum']+mb_strlen($level['closeSymbol']) < $levelData['closeSymbolNum']+$openpostend) {
-				$val = Array();
-				$values .= mb_substr($expression, $level['closeSymbolNum']+mb_strlen($level['closeSymbol']), $levelData['closeSymbolNum']+$openpostend-($level['closeSymbolNum']+mb_strlen($level['closeSymbol']))+1); // should be changed to zbx_substr
-			}
-			$prev =& $level;
-		}
-	}else{
-		$values = mb_substr($expression, $levelData['openSymbolNum']+$openprepend, $levelData['closeSymbolNum']+$openpostend-($levelData['openSymbolNum']+$openprepend)+1); // should be changed to zbx_substr  
-	}
-
-	if(isset($rules['ignorSymbols'])) $values = preg_replace("/".$rules['ignorSymbols']."/", '', $values);
-
-	if(preg_match("/(^[\/*<>#=&|]+|[\/*+<>#=&|\-]+$)/", $values, $errValues)) {
-		//echo "\t\t\t-----ERROR!-----\n";
-		return Array(
-				'valid' => false,
-				'errArray' => Array(
-					'errorCode' => 7,
-					'errorMsg' => 'Not allowed symbols or sequence of symbols detected at the beginnig or at the end of '.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-					'errStart' => $levelData['openSymbolNum'],
-					'errEnd' => $levelData['closeSymbolNum'],
-					'origVal' => mb_substr($expression, $levelData['openSymbolNum']+$openprepend, $levelData['closeSymbolNum']+$openpostend-($levelData['openSymbolNum']+$openprepend)+1),
-					'changedVal' => $values,
-					'errValues' => Array($errValues[0]))
-				);
-	}
-	//echo "{$levelData['value']}:\n{$values}\n";
-}
-
-function triggerExpressionValidateHost(&$parent, &$levelData, $index, &$expression, &$rules) {
-        static $usedHosts;
-        
-	$host = zbx_substr($expression, $levelData['openSymbolNum']+1, $levelData['closeSymbolNum']-($levelData['openSymbolNum']+1));
-	
-	$hostFound = CHost::get(Array('filter' => Array('host' => $host), 'templated_hosts' => true, 'output' => API_OUTPUT_EXTEND));
-	if(count($hostFound) > 0) {
-		$hostFound = array_shift($hostFound);
-		if(isset($hostFound['hostid']) && $hostFound['hostid'] > 0) $hostId = $hostFound['hostid'];
-	}
-	
-	if(isset($hostFound['hostid']) && isset($hostFound['hostid'])) $usedHosts[$expression][$hostFound['status']][$hostFound['hostid']] = true;
-
-	if(!isset($hostId)) {
-		return Array(
-                        'valid' => false,
-			'errArray' => Array(
-				'errorCode' => 8,
-				'errorMsg' => 'Host of item does not exists.'.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-				'errStart' => $levelData['openSymbolNum'],
-				'errEnd' => $levelData['closeSymbolNum'],
-				'errValues' => Array($host))
-			);
-	}else if(isset($usedHosts[$expression][HOST_STATUS_TEMPLATE]) && ( count($usedHosts[$expression]) > 1 || count($usedHosts[$expression][HOST_STATUS_TEMPLATE]) > 1 )) {
-	        return Array(
-	                'valid' => false,
-	                'errArray' => Array(
-	                        'errorCode' => 15,
-                                'errorMsg' => S_INCORRECT_TRIGGER_EXPRESSION.'.'.SPACE.S_YOU_CAN_NOT_USE_TEMPLATE_HOSTS_MIXED_EXPR.' Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-                                'errStart' => $levelData['openSymbolNum'],
-                                'errEnd' => $levelData['closeSymbolNum'],
-                                'errValues' => Array($host))
-                        );
-	}else{
-	        $levelData['levelDBData'] = Array();
-		$levelData['levelDBData']['hostid'] = $hostId;
-	}
-}
-
-function triggerExpressionValidateItemKey(&$parent, &$levelData, $index, &$expression, &$rules) {
-        if(!isset($parent['indexes']['keyName']) || !count($parent['indexes']['keyName']))
-                return;
-        
-        reset($parent['indexes']['keyName']);
-	$kData =& $parent['indexes']['keyName'][key($parent['indexes']['keyName'])];
-	$keyName = zbx_substr($expression, $kData['openSymbolNum']+zbx_strlen($kData['openSymbol']), $kData['closeSymbolNum']-$kData['openSymbolNum']-zbx_strlen($kData['closeSymbol']));
-	
-	if(isset($parent['indexes']['keyParams']) && count($parent['indexes']['keyParams']) > 0) {
-	        reset($parent['indexes']['keyParams']);
-        	$kpData =& $parent['indexes']['keyParams'][key($parent['indexes']['keyParams'])];
-        	$keyParams = isset($parent['indexes']['keyParams']) && count($parent['indexes']['keyParams']) > 0 ? zbx_substr($expression, $kpData['openSymbolNum'], $kpData['closeSymbolNum']-$kpData['openSymbolNum']+zbx_strlen($kpData['closeSymbol'])) : '';
-        }else{
-                $keyParams = '';
-        }
-
-        reset($parent['indexes']['server']);
-	$hData =& $parent['indexes']['server'][key($parent['indexes']['server'])];
-	if(isset($hData['levelDBData']) && $hData['levelDBData']['hostid'] > 0) {
-		$hostId = $hData['levelDBData']['hostid'];
-	}else{
-		return;
-	}
-	
-	$itemFound = CItem::get(Array('filter' => Array('hostid' => $hostId, 'key_' => $keyName.$keyParams), 'output' => API_OUTPUT_EXTEND, 'webitems' => true));
-	if(count($itemFound) > 0) {
-		$itemFound = array_shift($itemFound);
-		if(isset($itemFound['itemid']) && $itemFound['itemid'] > 0) $itemId = $itemFound['itemid'];
-	}
-	
-	if(!isset($itemId)) {
-		return Array(
-				'valid' => false,
-				'errArray' => Array(
-					'errorCode' => 9,
-					'errorMsg' => 'Key of item host does not exists.'.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-					'errStart' => $levelData['openSymbolNum'],
-					'errEnd' => $levelData['closeSymbolNum'],
-					'errValues' => Array($keyName.$keyParams))
-				);
-	}else{
-	        $levelData['levelDBData'] = Array();
-		$levelData['levelDBData'] = $itemFound;
-		$levelData['levelDBData']['itemid'] = $itemId;
-	}
-}
-
-function triggerExpressionValidateItemKeyFunction(&$parent, &$levelData, $index, &$expression, &$rules) {
-	global $ZBX_TR_EXPR_ALLOWED_FUNCTIONS;
-	
-	$function = zbx_substr($expression, $levelData['openSymbolNum']+zbx_strlen($levelData['openSymbol']), $levelData['closeSymbolNum']-$levelData['openSymbolNum']-zbx_strlen($levelData['closeSymbol']));
-	$fnc_valid = &$ZBX_TR_EXPR_ALLOWED_FUNCTIONS[$function];
-	
-	if(is_array($fnc_valid['item_types']) && isset($parent['levelDBData']) &&
-		!uint_in_array($parent['levelDBData']['value_type'], $fnc_valid['item_types'])){
-		foreach($fnc_valid['item_types'] as $type)
-			$allowed_types[] = item_value_type2str($type);
-		return Array(
-				'valid' => false,
-				'errArray' => Array(
-					'errorCode' => 10,
-					'errorMsg' => 'Key of item host does not exists.'.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-					'errStart' => $levelData['openSymbolNum'],
-					'errEnd' => $levelData['closeSymbolNum'],
-					'errValues' => Array($function),
-					'validTypes' => $allowed_types,
-					'function' => $function,
-					'value_type' => $parent['levelDBData']['value_type'])
-				);
-	}else{
-	        $levelData['levelDBData'] = Array();
-		$levelData['levelDBData']['valid'] = $fnc_valid;
-		$levelData['levelDBData']['function'] = $function;
-		//SDII($parent);
-	}
-}
-
-function triggerExpressionValidateItemKeyFunctionParams(&$parent, &$levelData, $index, &$expression, &$rules) {
-	//$fpData =& $parent['indexes']['keyFunctionParams'][0];
-	$functionParams = zbx_substr($expression, $levelData['openSymbolNum'], $levelData['closeSymbolNum']-$levelData['openSymbolNum']+zbx_strlen($levelData['closeSymbol']));
-	//SDII($parent['indexes']);
-	if(isset($parent['indexes']['keyFunctionName']) && count($parent['indexes']['keyFunctionName']) > 0) {
-	        reset($parent['indexes']['keyFunctionName']);
-	        $fItem =& $parent['indexes']['keyFunctionName'][key($parent['indexes']['keyFunctionName'])];
-        }else{
-                $fItem = Array();
-        }
-        
-        //SDII($fItem);
-        
-	$fnc_valid =& $fItem['levelDBData']['valid'];
-	if(!is_null($fnc_valid['args'])){
-		$parameter = Array();
-		if(isset($levelData['parts']) && is_array($levelData['parts']) && count($levelData['parts']) > 0) {
-			foreach($levelData['parts'] as &$param) {
-				if(isset($param['parts']) && is_array($param['parts']) && count($param['parts']) > 0) {
-				        reset($param['parts']);
-					$quoted =& $param['parts'][key($param['parts'])];
-					$parameter[] = zbx_substr($expression, $quoted['openSymbolNum']+zbx_strlen($quoted['openSymbol']), $quoted['closeSymbolNum']-($quoted['openSymbolNum']+zbx_strlen($quoted['openSymbol'])));
-				}else {
-					$parameter[] = zbx_substr($expression, $param['openSymbolNum']+zbx_strlen($param['openSymbol']), $param['closeSymbolNum']-($param['openSymbolNum']+zbx_strlen($param['openSymbol'])));
-				}
-			}
-		}
-//		SDII($parameter);
-		
-		if(!is_array($fnc_valid['args']))  $fnc_valid['args'] = array($fnc_valid['args']);
-		
-		foreach($fnc_valid['args'] as $pid => $params){
-			if(!isset($parameter[$pid])){
-				if( !isset($params['mandat']) ){
-					continue;
-				}else{
-					//error(S_MISSING_MANDATORY_PARAMETER_FOR_FUNCTION.' ('.$function.')');
-					//return false;
-					return Array(
-							'valid' => false,
-							'errArray' => Array(
-								'errorCode' => 11,
-								'errorMsg' => 'Used function missing required parametrs '.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-								'errStart' => $levelData['openSymbolNum'],
-								'errEnd' => $levelData['closeSymbolNum'],
-								'errValues' => Array($functionParams),
-								'function' => isset($fItem['levelDBData']['function']) ? $fItem['levelDBData']['function'] : '',
-								'value_type' => isset($fItem['levelDBData']['value_type']) ? $fItem['levelDBData']['value_type'] : '')
-							);
-				}
-			}
-			
-			if(preg_match('/^'.ZBX_PREG_EXPRESSION_USER_MACROS.'$/', $parameter[$pid])) continue;
-			
-			if(('sec' == $params['type']) && (validate_float($parameter[$pid])!=0) ){
-				//error('['.$parameter[$pid].'] '.S_NOT_FLOAT_OR_MACRO_FOR_FUNCTION_SMALL.' ('.$function.')');
-				//return false;
-				 return Array(
-				 		'valid' => false,
-				 		'errArray' => Array(
-				 			'errorCode' => 12,
-							'errorMsg' => $parameter[$pid].' is not float or not a macro for function '.$fItem['levelDBData']['function'].' '.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-							'errStart' => $levelData['openSymbolNum'],
-							'errEnd' => $levelData['closeSymbolNum'],
-							'errValue' => $parameter[$pid],
-							'function' => isset($fItem['levelDBData']['function']) ? $fItem['levelDBData']['function'] : '')
-						);
-			}
-			
-			if(('sec_num' == $params['type']) && (validate_ticks($parameter[$pid])!=0) ){
-				//error('['.$parameter[$pid].'] '.S_NOT_FLOAT_OR_MACRO_OR_COUNTER_FOR_FUNCTION_SMALL.' ('.$function.')');
-				//return false;
-				return Array(
-						'valid' => false,
-						'errArray' => Array(
-							'errorCode' => 13,
-							'errorMsg' => $parameter[$pid].' is not float or not a macro or not a counter for function '.$fItem['levelDBData']['function'].' '.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-							'errStart' => $levelData['openSymbolNum'],
-							'errEnd' => $levelData['closeSymbolNum'],
-							'errValue' => $parameter[$pid],
-							'function' => isset($fItem['levelDBData']['function']) ? $fItem['levelDBData']['function'] : '')
-						);
-			}
-		}
-	}else if((!isset($fnc_valid['args']) || !$fnc_valid['args']) && isset($levelData['parts']) && count($levelData['parts']) > 1) {
-		return Array(
-				'valid' => false,
-				'errArray' => Array(
-					'errorCode' => 14,
-					'errorMsg' => 'Used function does not accept params.'.$levelData['levelType'].'. Check expression starting from symbol #'.($levelData['openSymbolNum']+1).' up to symbol #'.$levelData['closeSymbolNum'].'.',
-					'errStart' => $levelData['openSymbolNum'],
-					'errEnd' => $levelData['closeSymbolNum'],
-					'errValues' => Array($functionParams),
-					'function' => isset($fItem['levelDBData']['function']) ? $fItem['levelDBData']['function'] : '',
-					'value_type' => isset($fItem['levelDBData']['value_type']) ? $fItem['levelDBData']['value_type'] : '')
-				);
 	}
 }
 

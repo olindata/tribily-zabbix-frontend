@@ -4,6 +4,7 @@ require_once('include/locales/en_gb.inc.php');
 require_once('include/js.inc.php');
 $translations = $TRANSLATION;
 
+
 if(isset($_GET['lang']) && ($_GET['lang'] != 'en_gb') && preg_match('/^[a-z]{2}_[a-z]{2}$/', $_GET['lang'])){
 	require_once('include/locales/'.$_GET['lang'].'.inc.php');
 	$translations = array_merge($translations, $TRANSLATION);
@@ -11,7 +12,7 @@ if(isset($_GET['lang']) && ($_GET['lang'] != 'en_gb') && preg_match('/^[a-z]{2}_
 // }}} get language translations
 
 
-// available scriptas 'scriptFileName' => 'path relative to js/'
+// available scripts 'scriptFileName' => 'path relative to js/'
 $availableJScripts = array(
 	'common.js' => '',
 	'menu.js' => '',
@@ -32,7 +33,7 @@ $availableJScripts = array(
 	'class.cdebug.js' => '',
 	'class.cmap.js' => '',
 	'class.cmessages.js' => '',
-	'class.cookie.js' => '', 
+	'class.cookie.js' => '',
 	'class.cscreen.js' => '',
 	'class.csuggest.js' => '',
 	'class.cswitcher.js' => '',
@@ -49,13 +50,13 @@ $tranStrings = array(
 	),
 	'functions.js' => array('DO_YOU_REPLACE_CONDITIONAL_EXPRESSION_Q', 'S_INSERT_MACRO', 'S_ADD_SERVICE',
 		'S_EDIT_SERVICE', 'S_DELETE_SERVICE', 'S_DELETE_SELECTED_SERVICES_Q', 'S_CREATE_LOG_TRIGGER', 'S_DELETE',
-		'S_DELETE_KEYWORD_Q', 'S_DELETE_EXPRESSION_Q',
+		'S_DELETE_KEYWORD_Q', 'S_DELETE_EXPRESSION_Q','S_SIMPLE_GRAPHS', 'S_HISTORY', 'S_HISTORY_AND_SIMPLE_GRAPHS'
 	),
 	'main.js' => array('S_CLOSE', 'S_NO_ELEMENTS_SELECTED'),
 	'class.calendar.js' => array('S_JANUARY', 'S_FEBRUARY', 'S_MARCH', 'S_APRIL', 'S_MAY', 'S_JUNE',
 		'S_JULY', 'S_AUGUST', 'S_SEPTEMBER', 'S_OCTOBER', 'S_NOVEMBER', 'S_DECEMBER', 'S_MONDAY_SHORT_BIG',
 		'S_TUESDAY_SHORT_BIG', 'S_WEDNESDAY_SHORT_BIG', 'S_THURSDAY_SHORT_BIG', 'S_FRIDAY_SHORT_BIG',
-		'S_SATURDAY_SHORT_BIG', 'S_SUNDAY_SHORT_BIG'
+		'S_SATURDAY_SHORT_BIG', 'S_SUNDAY_SHORT_BIG', 'S_TIME', 'S_NOW', 'S_DONE'
 	),
 	'class.cmap.js' => array('S_ON','S_OFF','S_HIDDEN','S_SHOWN','S_EDIT_MAP_ELEMENT','S_ERROR',
 		'S_TYPE','S_LABEL','S_GET_SELEMENTS_FAILED','S_SHOW','S_HIDE',
@@ -77,7 +78,24 @@ $tranStrings = array(
 );
 
 if(empty($_GET['files'])){
-	$files = array('prototype.js', 'effects.js', 'dragdrop.js', 'common.js', 'dom.js', 'class.cdebug.js', 'class.cdate.js', 'class.cookie.js', 'class.curl.js', 'class.rpc.js', 'class.bbcode.js', 'class.csuggest.js', 'class.cmessages.js', 'main.js', 'functions.js');
+	$files = array(
+		'prototype.js',
+		'effects.js',
+		'dragdrop.js',
+		'common.js',
+		'dom.js',
+		'class.cdebug.js',
+		'class.cdate.js',
+		'class.cookie.js',
+		'class.curl.js',
+		'class.rpc.js',
+		'class.bbcode.js',
+		'class.csuggest.js',
+		'class.cmessages.js',
+		'main.js',
+		'functions.js',
+		'menu.js'
+	);
 }
 else{
 	$files = $_GET['files'];
@@ -99,9 +117,19 @@ foreach($files as $file){
 }
 
 
+$jsLength = strlen($js);
+$ETag = md5($jsLength);
+if(isset($_SERVER['HTTP_IF_NONE_MATCH']) && $_SERVER['HTTP_IF_NONE_MATCH'] == $ETag){
+	header('HTTP/1.1 304 Not Modified');
+	header('ETag: '.$ETag);
+	exit();
+}
+
 header('Content-type: text/javascript; charset=UTF-8');
+// breaks if "zlib.output_compression = On"
+//	header('Content-length: '.$jsLength);
+header('Cache-Control: public, must-revalidate');
+header('ETag: '.$ETag);
 
 echo $js;
-
-return;
 ?>

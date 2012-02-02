@@ -117,7 +117,7 @@ include_once('include/page_header.php');
 				$host = get_host_by_hostid($app['hostid']);
 
 				DBstart();
-				$result = delete_application($_REQUEST['applicationid']);
+				$result = CApplication::delete($_REQUEST['applicationid']);
 				$result = DBend($result);
 			}
 			show_messages($result, S_APPLICATION_DELETED, S_CANNOT_DELETE_APPLICATION);
@@ -146,7 +146,7 @@ include_once('include/page_header.php');
 		while($db_app = DBfetch($db_applications)){
 			if(!isset($applications[$db_app['applicationid']]))	continue;
 
-			$go_result &= delete_application($db_app['applicationid']);
+			$go_result &= (bool) CApplication::delete($db_app['applicationid']);
 
 			if($go_result){
 				$host = get_host_by_hostid($db_app['hostid']);
@@ -167,10 +167,11 @@ include_once('include/page_header.php');
 
 			$sql = 'SELECT ia.itemid,i.hostid,i.key_'.
 					' FROM items_applications ia '.
-					  ' LEFT JOIN items i ON ia.itemid=i.itemid '.
+						' LEFT JOIN items i ON ia.itemid=i.itemid '.
 					' WHERE ia.applicationid='.$appid.
-					  ' AND i.hostid='.$_REQUEST['hostid'].
-					  ' AND '.DBin_node('ia.applicationid');
+						' AND i.hostid='.$_REQUEST['hostid'].
+						' AND i.type<>9'.
+						' AND '.DBin_node('ia.applicationid');
 
 			$res_items = DBselect($sql);
 			while($item=DBfetch($res_items)){
@@ -210,20 +211,9 @@ include_once('include/page_header.php');
 	$app_wdgt = new CWidget();
 
 	$frmForm = new CForm(null, 'get');
-
-// Config
-	$cmbConf = new CComboBox('config', 'applications.php', 'javascript: redirect(this.options[this.selectedIndex].value);');
-		$cmbConf->addItem('templates.php',S_TEMPLATES);
-		$cmbConf->addItem('hosts.php',S_HOSTS);
-		$cmbConf->addItem('items.php',S_ITEMS);
-		$cmbConf->addItem('triggers.php',S_TRIGGERS);
-		$cmbConf->addItem('graphs.php',S_GRAPHS);
-		$cmbConf->addItem('applications.php',S_APPLICATIONS);
 	$frmForm->addVar('hostid',get_request('hostid', 0));
-	$frmForm->addItem($cmbConf);
 
 	if(!isset($_REQUEST['form'])){
-		$frmForm->addItem(SPACE);
 		$frmForm->addItem(new CButton('form', S_CREATE_APPLICATION));
 	}
 
@@ -268,12 +258,12 @@ include_once('include/page_header.php');
 		$frmApp->addVar("apphostid",$apphostid);
 
 		if(!isset($_REQUEST["applicationid"])){
-// any new application can SELECT host
+			// any new application can SELECT host
 			$frmApp->addRow(S_HOST,array(
 				new CTextBox("apphost",$apphost,32,'yes'),
 				new CButton("btn1",S_SELECT,
 					"return PopUp('popup.php?dstfrm=".$frmApp->getName().
-					"&dstfld1=apphostid&dstfld2=apphost&srctbl=hosts_and_templates&srcfld1=hostid&srcfld2=host',450,450);",
+					"&dstfld1=apphostid&dstfld2=apphost&srctbl=hosts_and_templates&srcfld1=hostid&srcfld2=host&noempty=1',450,450);",
 					'T')
 				));
 		}
@@ -361,7 +351,7 @@ include_once('include/page_header.php');
 				else{
 					$template_host = get_realhost_by_applicationid($application['templateid']);
 					$name = array(
-						new CLink($template_host['host'], 'applications.php?hostid='.$template_host['hostid']),
+						new CLink($template_host['host'], 'applications.php?hostid='.$template_host['hostid'], 'unknown'),
 						':',
 						$application['name']
 					);

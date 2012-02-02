@@ -17,24 +17,25 @@
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **/
-
-include_once 'include/discovery.inc.php';
-
 ?>
 <?php
-function check_permission_for_action_conditions($conditions){
+function check_permission_for_action_conditions($conditions) {
 	global $USER_DETAILS;
 
-	if(USER_TYPE_SUPER_ADMIN == $USER_DETAILS['type']) return true;
+	if (USER_TYPE_SUPER_ADMIN == $USER_DETAILS['type']) {
+		return true;
+	}
 
 	$groupids = array();
 	$hostids = array();
 	$triggerids = array();
 
-	foreach($conditions as $ac_data){
-		if($ac_data['operator'] != 0) continue;
+	foreach ($conditions as $ac_data) {
+		if ($ac_data['operator'] != 0) {
+			continue;
+		}
 
-		switch($ac_data['conditiontype']){
+		switch ($ac_data['conditiontype']) {
 			case CONDITION_TYPE_HOST_GROUP:
 				$groupids[$ac_data['value']] = $ac_data['value'];
 				break;
@@ -53,11 +54,13 @@ function check_permission_for_action_conditions($conditions){
 		'editable' => 1
 	);
 
-	try{
+	try {
 		$groups = CHostgroup::get($options);
 		$groups = zbx_toHash($groups, 'groupid');
-		foreach($groupids as $hgnum => $groupid){
-			if(!isset($groups[$groupid])) throw new Exception(S_INCORRECT_GROUP);
+		foreach ($groupids as $hgnum => $groupid) {
+			if (!isset($groups[$groupid])) {
+				throw new Exception(S_INCORRECT_GROUP);
+			}
 		}
 
 		$options = array(
@@ -66,8 +69,10 @@ function check_permission_for_action_conditions($conditions){
 		);
 		$hosts = CHost::get($options);
 		$hosts = zbx_toHash($hosts, 'hostid');
-		foreach($hostids as $hnum => $hostid){
-			if(!isset($hosts[$hostid])) throw new Exception(S_INCORRECT_HOST);
+		foreach ($hostids as $hnum => $hostid) {
+			if (!isset($hosts[$hostid])) {
+				throw new Exception(S_INCORRECT_HOST);
+			}
 		}
 
 		$options = array(
@@ -76,17 +81,17 @@ function check_permission_for_action_conditions($conditions){
 		);
 		$triggers = CTrigger::get($options);
 		$triggers = zbx_toHash($triggers, 'triggerid');
-		foreach($triggerids as $hnum => $triggerid){
-			if(!isset($triggers[$triggerid])) throw new Exception(S_INCORRECT_TRIGGER);
+		foreach ($triggerids as $hnum => $triggerid) {
+			if (!isset($triggers[$triggerid])) {
+				throw new Exception(S_INCORRECT_TRIGGER);
+			}
 		}
 	}
-	catch(Exception $e){
-//		throw new Exception($e->getMessage());
-//		error($e->getMessage());
+	catch (Exception $e) {
 		return false;
 	}
 
-return true;
+	return true;
 }
 
 function get_action_by_actionid($actionid){
@@ -174,10 +179,13 @@ function condition_value2str($conditiontype, $value){
 				'expandTriggerDescriptions' => true,
 				'output' => API_OUTPUT_EXTEND,
 				'select_hosts' => API_OUTPUT_EXTEND,
+				'nodeids' => get_current_nodeid(true),
 			));
 			$trig = reset($trig);
 			$host = reset($trig['hosts']);
-			$str_val = $host['host'].':'.$trig['description'];
+			$str_val = '';
+			if(id2nodeid($value) != get_current_nodeid()) $str_val = get_node_name_by_elid($value, true, ': ');
+			$str_val .= $host['host'].':'.$trig['description'];
 			break;
 		case CONDITION_TYPE_HOST:
 		case CONDITION_TYPE_HOST_TEMPLATE:
@@ -272,13 +280,13 @@ function get_operation_desc($type=SHORT_DESCRITION, $data){
 				case OPERATION_TYPE_MESSAGE:
 					switch($data['object']){
 						case OPERATION_OBJECT_USER:
-							$obj_data = CUser::get(array('userids' => $data['objectid'],  'extendoutput' => 1));
+							$obj_data = CUser::get(array('userids' => $data['objectid'],  'output' => API_OUTPUT_EXTEND));
 							$obj_data = reset($obj_data);
 
 							$obj_data = S_USER.' "'.$obj_data['alias'].'"';
 							break;
 						case OPERATION_OBJECT_GROUP:
-							$obj_data = CUserGroup::get(array('usrgrpids' => $data['objectid'],  'extendoutput' => 1));
+							$obj_data = CUserGroup::get(array('usrgrpids' => $data['objectid'],  'output' => API_OUTPUT_EXTEND));
 							$obj_data = reset($obj_data);
 
 							$obj_data = S_GROUP.' "'.$obj_data['name'].'"';
@@ -323,7 +331,6 @@ function get_operation_desc($type=SHORT_DESCRITION, $data){
 		case LONG_DESCRITION:
 			switch($data['operationtype']){
 				case OPERATION_TYPE_MESSAGE:
-					// for PHP4
 					if(isset($data['default_msg']) && !empty($data['default_msg'])){
 						if(isset($_REQUEST['def_shortdata']) && isset($_REQUEST['def_longdata'])){
 							$temp = bold(S_SUBJECT.': ');
@@ -687,19 +694,23 @@ function validate_condition($conditiontype, $value){
 }
 
 function validate_operation($operation){
+	if(isset($operation['esc_period']) && (($operation['esc_period'] > 0) && ($operation['esc_period'] < 60))){
+		error(S_INCORRECT_ESCALATION_PERIOD);
+		return false;
+	}
 
 	switch($operation['operationtype']){
 		case OPERATION_TYPE_MESSAGE:
 			switch($operation['object']){
 				case OPERATION_OBJECT_USER:
-					$users = CUser::get(array('userids' => $operation['objectid'],  'extendoutput' => 1));
+					$users = CUser::get(array('userids' => $operation['objectid'],  'output' => API_OUTPUT_EXTEND));
 					if(empty($users)){
 						error(S_INCORRECT_USER);
 						return false;
 					}
 					break;
 				case OPERATION_OBJECT_GROUP:
-					$usrgrps = CUserGroup::get(array('usrgrpids' => $operation['objectid'],  'extendoutput' => 1));
+					$usrgrps = CUserGroup::get(array('usrgrpids' => $operation['objectid'],  'output' => API_OUTPUT_EXTEND));
 					if(empty($usrgrps)){
 						error(S_INCORRECT_GROUP);
 						return false;
@@ -899,11 +910,13 @@ function get_action_msgs_for_event($eventid){
 
 	$alerts = CAlert::get(array(
 		'eventids' => $eventid,
-		'alerttype' => ALERT_TYPE_MESSAGE,
-		'extendoutput' => 1,
+		'filter' => array(
+			'alerttype' => ALERT_TYPE_MESSAGE,
+		),
+		'output' => API_OUTPUT_EXTEND,
+		'select_mediatypes' => API_OUTPUT_EXTEND,
 		'sortfield' => 'clock',
-		'sortorder' => ZBX_SORT_DOWN,
-		'select_mediatypes' => 1
+		'sortorder' => ZBX_SORT_DOWN
 	));
 
 	foreach($alerts as $alertid => $row){
@@ -972,8 +985,10 @@ function get_action_cmds_for_event($eventid){
 
 	$alerts = CAlert::get(array(
 		'eventids' => $eventid,
-		'alerttype' => ALERT_TYPE_COMMAND,
-		'extendoutput' => 1,
+		'filter' => array(
+			'alerttype' => ALERT_TYPE_COMMAND
+		),
+		'output' => API_OUTPUT_EXTEND,
 		'sortfield' => 'clock',
 		'sortorder' => ZBX_SORT_DOWN
 	));

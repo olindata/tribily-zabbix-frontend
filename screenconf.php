@@ -108,12 +108,13 @@ include_once('include/page_header.php');
 
 // IMPORT ///////////////////////////////////
 	$rules = get_request('rules', array());
-	if(!isset($_REQUEST['form_refresh'])){
+	if(!isset($_FILES['import_file'])){
 		foreach(array('screen') as $key){
 			$rules[$key]['exist'] = 1;
 			$rules[$key]['missed'] = 1;
 		}
 	}
+
 
 	if(isset($_FILES['import_file']) && is_file($_FILES['import_file']['tmp_name'])){
 		require_once('include/export.inc.php');
@@ -167,15 +168,25 @@ include_once('include/page_header.php');
 				unset($_REQUEST['screenid']);
 			}
 		}
-		if(isset($_REQUEST['delete']) && isset($_REQUEST['screenid'])){
-			$result = CScreen::delete($_REQUEST['screenid']);
+		if(isset($_REQUEST['delete']) && isset($_REQUEST['screenid']) || ($_REQUEST['go'] == 'delete')){
+			$screenids = get_request('screens', array());
+			if(isset($_REQUEST['screenid'])){
+				$screenids[] = $_REQUEST['screenid'];
+			}
+			$screens = CScreen::get(array('screenids' => $screenids, 'output' => API_OUTPUT_EXTEND, 'editable => 1'));
 
-			if($result) unset($_REQUEST['screenid'], $_REQUEST['form']);
-			show_messages($result, S_SCREEN_DELETED, S_CANNOT_DELETE_SCREEN);
-		}
-		else if($_REQUEST['go'] == 'delete'){
-			$go_result = CScreen::delete(get_request('screens', array()));
-			if($go_result) unset($_REQUEST['form']);
+			$go_result = CScreen::delete($screenids);
+
+			if($go_result){
+				unset($_REQUEST['screenid'], $_REQUEST['form']);
+				foreach($screens as $screen){
+					add_audit_ext(AUDIT_ACTION_DELETE, AUDIT_RESOURCE_SCREEN,
+						$screen['screenid'],
+						$screen['name'],
+						null,null,null);
+				}
+			}
+
 			show_messages($go_result, S_SCREEN_DELETED, S_CANNOT_DELETE_SCREEN);
 		}
 
@@ -248,7 +259,7 @@ include_once('include/page_header.php');
 			$goBox->addItem('export', S_EXPORT_SELECTED);
 
 			$goOption = new CComboItem('delete', S_DELETE_SELECTED);
-			$goOption->setAttribute('confirm', 'Delete selected screens?');
+			$goOption->setAttribute('confirm', S_DELETE_SELECTED_SCREENS_Q);
 			$goBox->addItem($goOption);
 
 			// goButton name is necessary!!!

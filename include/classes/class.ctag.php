@@ -51,7 +51,7 @@ class CTag extends CObject{
 			$this->tag_end = $this->tag_body_start = '';
 		}
 		else{
-			CTag::addItem($body);
+			$this->addItem($body);
 		}
 
 		$this->setClass($class);
@@ -66,7 +66,8 @@ class CTag extends CObject{
 	public function startToString(){
 		$res = $this->tag_start.'<'.$this->tagname;
 		foreach($this->attributes as $key => $value){
-			$res .= ' '.$key.'="'.$value.'"';
+			$value = str_replace(array("\r", "\n"), '', strval($value));
+			$res .= ' '.$key.'="'.$this->sanitize($value).'"';
 		}
 		$res .= ($this->paired==='yes')? '>':' />';
 
@@ -135,7 +136,7 @@ class CTag extends CObject{
 			$this->attributes[$name] = unpack_object($value);
 		}
 		else if(isset($value))
-			$this->attributes[$name] = htmlspecialchars(str_replace(array("\r", "\n"), '', strval($value)));
+			$this->attributes[$name] = $value;
 		else
 			unset($this->attributes[$name]);
 	}
