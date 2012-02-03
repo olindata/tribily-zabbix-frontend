@@ -140,7 +140,7 @@ $_REQUEST['eventsource'] = get_request('eventsource',CProfile::get('web.actionco
 
 		$conditions = get_request('conditions', array());
 		foreach($conditions as $cnum => &$condition){
-			$condition['conditiontype'] = $condition['type'];
+			$condition['conditiontype'] = $condition['conditiontype'];
 		}
 		unset($condition);
 
@@ -195,7 +195,7 @@ $_REQUEST['eventsource'] = get_request('eventsource',CProfile::get('web.actionco
 
 		if(!isset($new_condition['value'])) $new_condition['value'] = '';
 
-		if(validate_condition($new_condition['type'], $new_condition['value'])){
+		if(validate_condition($new_condition['conditiontype'], $new_condition['value'])){
 			$_REQUEST['conditions'] = get_request('conditions',array());
 			if(!str_in_array($new_condition, $_REQUEST['conditions']))
 				array_push($_REQUEST['conditions'],$new_condition);
@@ -500,12 +500,12 @@ $_REQUEST['eventsource'] = get_request('eventsource',CProfile::get('web.actionco
 		if (($_REQUEST['eventsource'] == EVENT_SOURCE_TRIGGERS) && !isset($_REQUEST['actionid']) && !isset($_REQUEST['form_refresh'])) {
 			$conditions = array(
 				array(
-					'type' => CONDITION_TYPE_TRIGGER_VALUE,
+					'conditiontype' => CONDITION_TYPE_TRIGGER_VALUE,
 					'operator' => CONDITION_OPERATOR_EQUAL,
 					'value' => TRIGGER_VALUE_TRUE,
 				),
 				array(
-					'type' => CONDITION_TYPE_MAINTENANCE,
+					'conditiontype' => CONDITION_TYPE_MAINTENANCE,
 					'operator' => CONDITION_OPERATOR_NOT_IN,
 					'value' => '',
 				),
@@ -518,7 +518,7 @@ $_REQUEST['eventsource'] = get_request('eventsource',CProfile::get('web.actionco
 
 			$conditions = $action['conditions'];
 			foreach($conditions as $acrow => &$condition_data){
-				$condition_data['type'] = $condition_data['conditiontype'];
+				$condition_data['conditiontype'] = $condition_data['conditiontype'];
 			}
 			unset($condition_data);
 
@@ -539,23 +539,23 @@ $_REQUEST['eventsource'] = get_request('eventsource',CProfile::get('web.actionco
 		$i=0;
 
 		foreach($conditions as $id => $condition){
-			if(!isset($condition['type'])) $condition['type'] = 0;
+			if(!isset($condition['conditiontype'])) $condition['conditiontype'] = 0;
 			if(!isset($condition['operator'])) $condition['operator'] = 0;
 			if(!isset($condition['value'])) $condition['value'] = 0;
 
-			if(!str_in_array($condition['type'], $allowed_conditions)) continue;
+			if(!str_in_array($condition['conditiontype'], $allowed_conditions)) continue;
 
 			$label = chr(ord('A') + $i);
 			$cond_el->addRow(array('('.$label.')',array(
 				new CCheckBox('g_conditionid[]', 'no', null,$i),
-				get_condition_desc($condition['type'], $condition['operator'], $condition['value']))
+				get_condition_desc($condition['conditiontype'], $condition['operator'], $condition['value']))
 			));
 
-			$tblCond->addItem(new CVar("conditions[$i][type]", $condition['type']));
+			$tblCond->addItem(new CVar("conditions[$i][conditiontype]", $condition['conditiontype']));
 			$tblCond->addItem(new CVar("conditions[$i][operator]", $condition['operator']));
 			$tblCond->addItem(new CVar("conditions[$i][value]", $condition['value']));
 
-			$grouped_conditions[$condition['type']][] = $label;
+			$grouped_conditions[$condition['conditiontype']][] = $label;
 
 			$i++;
 		}
@@ -616,27 +616,27 @@ $_REQUEST['eventsource'] = get_request('eventsource',CProfile::get('web.actionco
 
 			$new_condition = get_request('new_condition', array());
 			$new_condition = array(
-				'type' => isset($new_condition['type']) ? $new_condition['type'] : CONDITION_TYPE_TRIGGER_NAME,
+				'conditiontype' => isset($new_condition['conditiontype']) ? $new_condition['conditiontype'] : CONDITION_TYPE_TRIGGER_NAME,
 				'operator' => isset($new_condition['operator']) ? $new_condition['operator'] : CONDITION_OPERATOR_LIKE,
 				'value' => isset($new_condition['value']) ? $new_condition['value'] : '',
 			);
 
-			if(!str_in_array($new_condition['type'], $allowed_conditions))
-				$new_condition['type'] = $allowed_conditions[0];
+			if(!str_in_array($new_condition['conditiontype'], $allowed_conditions))
+				$new_condition['conditiontype'] = $allowed_conditions[0];
 
 			$rowCondition = array();
-			$cmbCondType = new CComboBox('new_condition[type]',$new_condition['type'],'submit()');
+			$cmbCondType = new CComboBox('new_condition[conditiontype]',$new_condition['conditiontype'],'submit()');
 			foreach($allowed_conditions as $cond)
 				$cmbCondType->addItem($cond, condition_type2str($cond));
 			$rowCondition[] = $cmbCondType;
 
 
 			$cmbCondOp = new CComboBox('new_condition[operator]');
-			foreach(get_operators_by_conditiontype($new_condition['type']) as $op)
+			foreach(get_operators_by_conditiontype($new_condition['conditiontype']) as $op)
 				$cmbCondOp->addItem($op, condition_operator2str($op));
 			$rowCondition[] = $cmbCondOp;
 
-			switch($new_condition['type']){
+			switch($new_condition['conditiontype']){
 				case CONDITION_TYPE_HOST_GROUP:
 					$tblNewCond->addItem(new CVar('new_condition[value]','0'));
 					$rowCondition[] = array(

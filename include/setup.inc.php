@@ -509,6 +509,10 @@ JS;
 						'ZBX_SERVER' => $this->getConfig('ZBX_SERVER'),
 						'ZBX_SERVER_PORT' => $this->getConfig('ZBX_SERVER_PORT'),
 						'ZBX_SERVER_NAME' => $this->getConfig('ZBX_SERVER_NAME'),
+					  'LOGIN_REDIRECT_ENABLED' => false,
+					  'LOGIN_REDIRECT_URL'     => '',
+					  'LOGOUT_REDIRECT_URL'     => 'index.php',
+					
 					);
 					die($config->getString());
 				}

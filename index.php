@@ -19,6 +19,14 @@
 **/
 ?>
 <?php
+
+// If the user got redirected from somewhere else, we may want to set the cookie
+if(isset($_GET['setSid']) && isset($_GET['setCookie']))
+{
+  $_COOKIE['zbx_sessionid'] = $_GET['setSid'];
+}
+  
+  
 require_once('include/config.inc.php');
 require_once('include/forms.inc.php');
 
@@ -50,7 +58,7 @@ $page['file']	= 'index.php';
 
 		CUser::logout($sessionid);
 
-		redirect('index.php');
+		redirect($LOGOUT_REDIRECT_URL);
 		exit();
 	}
 
@@ -70,12 +78,24 @@ $page['file']	= 'index.php';
 		}
 	}
 
+	// Look if the Variable is set correctly
+	if($LOGIN_REDIRECT_ENABLED && trim($LOGIN_REDIRECT_URL)=="")
+	{
+		$LOGIN_REDIRECT_ENABLED = false;
+		error("WARNING! The LOGIN_REDIRECT_URL parameter was empty. REDIRECT Feature was disabled to prevent infinite loops. Please contact the System Administrator");
+	}	
+	
 	$request = get_request('request');
 	if(isset($_REQUEST['enter'])&&($_REQUEST['enter']=='Enter')){
 		global $USER_DETAILS;
 		$name = get_request('name','');
 		$passwd = get_request('password','');
 
+		// Login disabled?
+		if($LOGIN_REDIRECT_ENABLED) {
+		  header("Location: ".$LOGIN_REDIRECT_URL);
+		  exit();
+		}
 
 		$login = CUser::authenticate(array('user'=>$name, 'password'=>$passwd, 'auth_type'=>$authentication_type));
 
@@ -93,7 +113,18 @@ include_once('include/page_header.php');
 	if(isset($_REQUEST['message'])) show_error_message($_REQUEST['message']);
 
 	if(!isset($sessionid) || ($USER_DETAILS['alias'] == ZBX_GUEST_USER)){
-		switch($authentication_type){
+  	// Login disabled?
+  	if($LOGIN_REDIRECT_ENABLED == true)
+  	{
+  				jsRedirect($LOGIN_REDIRECT_URL);
+  				error("Sorry, you can only signon using our Website at ".$LOGIN_REDIRECT_URL);
+  				// We should add this, Sorry :(
+  				include_once('include/page_footer.php');
+  			exit();
+  	}
+	    
+	  
+	  switch($authentication_type){
 			case ZBX_AUTH_HTTP:
 				break;
 			case ZBX_AUTH_LDAP:
